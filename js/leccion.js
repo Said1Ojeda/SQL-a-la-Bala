@@ -90,20 +90,38 @@ export function calificar(ej, sql) {
             const motivo = a.filas.length !== b.filas.length
                 ? `La tabla quedó con ${b.filas.length} filas y debía quedar con ${a.filas.length}.`
                 : 'La tabla no quedó como se pedía. Revisa el valor que pusiste y el WHERE.';
-            return { bien: false, motivo, salida: usuario, sql };
+            return { bien: false, motivo, salida: usuario, sql, comparacion: c, dml: true };
         }
         return { bien: true, salida: usuario, sql };
     }
     const esperado = rs.resultados[rs.resultados.length - 1];
     const obtenido = usuario.r.resultados[usuario.r.resultados.length - 1];
     const c = comparar(esperado, obtenido, !!ej.orden);
-    if (!c.igual) return { bien: false, motivo: c.motivo, salida: usuario, sql };
+    if (!c.igual) return { bien: false, motivo: c.motivo, salida: usuario, sql, comparacion: c };
     if (ej.columnas) {
         const nombres = obtenido.columnas.map(x => x.toLowerCase());
         const falta = ej.columnas.find(x => !nombres.includes(x.toLowerCase()));
         if (falta) return { bien: false, motivo: `Los datos están bien, pero falta la columna con el título ${falta}.`, salida: usuario, sql };
     }
     return { bien: true, salida: usuario, sql };
+}
+
+// cuando falla se ensena exactamente que filas faltaron y cuales sobraron
+export function explicaHTML(c) {
+    if (!c || !c.comparacion) return '';
+    const x = c.comparacion;
+    if (x.columnas) {
+        return `<div class="explica"><h3>Las columnas no cuadran</h3>
+            <p>Se esperaban <b>${x.columnas.esperadas.length}</b> y te salieron <b>${x.columnas.tuyas.length}</b>. Revisa la lista del SELECT.</p></div>`;
+    }
+    if (!x.faltan && !x.sobran) return '';
+    const parte = (titulo, cls, t, nota) => t.filas.length ? `<div class="explica-parte ${cls}"><h4>${titulo} <small>${t.filas.length}</small></h4><p>${nota}</p>${tablaHTML({ columnas: t.columnas, filas: t.filas }, { titulo: '', max: 8 })}</div>` : '';
+    const donde = c.dml ? 'en la tabla' : 'en tu resultado';
+    return `<div class="explica"><h3>Esto es lo que no cuadra</h3>
+        <div class="explica-partes">
+            ${parte('Te faltan', 'faltan', x.faltan, `Debían estar ${donde} y no aparecen.`)}
+            ${parte('Te sobran', 'sobran', x.sobran, `Aparecen ${donde} pero no debían.`)}
+        </div></div>`;
 }
 
 function esperadoHTML(ej) {
@@ -259,7 +277,7 @@ export function abrirLeccion(raiz, { leccion, ejercicios, titulo, alSalir, alTer
             if (!editor.valor.trim()) { editor.enfocar(); return; }
             const c = calificar(ej, editor.valor);
             if (c.salida) {
-                salida.innerHTML = salidaHTML(c.salida) + (c.salida.r.error ? '' : extrasHTML(editor.valor));
+                salida.innerHTML = (c.bien ? '' : explicaHTML(c)) + salidaHTML(c.salida) + (c.salida.r.error ? '' : extrasHTML(editor.valor));
                 conectarExtras(salida, editor.valor);
             }
             revisar.disabled = true;
@@ -308,7 +326,7 @@ export function abrirLeccion(raiz, { leccion, ejercicios, titulo, alSalir, alTer
                 c = calificar(ej, sql);
                 if (c.bien || !c.motivo) c = { ...c, bien: false, motivo: puestas.some(p => p.k[0] === 'x') ? 'Usaste una ficha que no va.' : 'Te faltan fichas por poner.' };
             } else c = calificar(ej, sql);
-            if (c.salida) tarjeta.querySelector('.salida').innerHTML = salidaHTML(c.salida);
+            if (c.salida) tarjeta.querySelector('.salida').innerHTML = (c.bien ? '' : explicaHTML(c)) + salidaHTML(c.salida);
             revisar.disabled = true;
             listo(c.bien);
             abrirVeredicto(c.bien, c.bien ? (ej.explica || '') : c.motivo, c.bien ? '' : ej.fichas.join(' '), siguiente);

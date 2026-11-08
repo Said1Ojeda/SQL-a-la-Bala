@@ -138,6 +138,66 @@ function reescribirConvert(s) {
     return s;
 }
 
+// tablas con alias de un FROM con JOIN, mas las condiciones de cada ON
+function piezasFrom(from) {
+    const trozos = from.split(/\b(?:INNER\s+)?JOIN\b/i);
+    if (/\b(LEFT|RIGHT|FULL|CROSS)\b\s*$/i.test(trozos.slice(0, -1).join(' '))) return null;
+    const piezas = [];
+    for (const t of trozos) {
+        const m = /^\s*([\w\[\]\.]+)(?:\s+(?:AS\s+)?(?!ON\b)(\w+))?(?:\s+ON\s+([\s\S]+))?$/i.exec(t.trim());
+        if (!m) return null;
+        const tabla = limpiaNombre(m[1]);
+        piezas.push({ tabla, alias: m[2] || tabla, on: m[3] ? m[3].trim() : null });
+    }
+    return piezas;
+}
+
+// UPDATE alias SET ... FROM tabla alias JOIN ... como en SQL Server
+function updateConJoin(s) {
+    const m = /^\s*UPDATE\s+([\w\[\]\.]+)\s+SET\s+([\s\S]+?)\s+FROM\s+([\s\S]+?)(?:\s+WHERE\s+([\s\S]+))?\s*$/i.exec(s);
+    if (!m) return s;
+    const objetivo = limpiaNombre(m[1]).toLowerCase();
+    const piezas = piezasFrom(m[3]);
+    if (!piezas) return s;
+    const base = piezas.find(p => p.alias.toLowerCase() === objetivo) || piezas.find(p => p.tabla.toLowerCase() === objetivo);
+    if (!base) return s;
+    const otras = piezas.filter(p => p !== base);
+    const condiciones = piezas.map(p => p.on).filter(Boolean).map(c => '(' + c + ')');
+    if (m[4]) condiciones.push('(' + m[4] + ')');
+    // en SQLite la columna del SET va sin alias
+    const sets = porComasCrudo(m[2]).map(a => a.replace(/^\s*[\w\[\]]+\.([\w\[\]]+)\s*=/, '$1 ='));
+    let r = `UPDATE ${base.tabla} AS ${base.alias} SET ${sets.join(', ')}`;
+    if (otras.length) r += ' FROM ' + otras.map(p => `${p.tabla} AS ${p.alias}`).join(', ');
+    if (condiciones.length) r += ' WHERE ' + condiciones.join(' AND ');
+    return r;
+}
+
+// DELETE alias FROM tabla alias JOIN ... se vuelve un DELETE por rowid
+function deleteConJoin(s) {
+    const m = /^\s*DELETE\s+(?!FROM\b)([\w\[\]\.]+)\s+FROM\s+([\s\S]+)$/i.exec(s);
+    if (!m) return s;
+    const objetivo = limpiaNombre(m[1]).toLowerCase();
+    const resto = m[2];
+    const desde = resto.split(/\bWHERE\b/i)[0];
+    const piezas = piezasFrom(desde);
+    const base = piezas && (piezas.find(p => p.alias.toLowerCase() === objetivo) || piezas.find(p => p.tabla.toLowerCase() === objetivo));
+    if (!base) return s;
+    return `DELETE FROM ${base.tabla} WHERE rowid IN (SELECT ${base.alias}.rowid FROM ${resto})`;
+}
+
+function porComasCrudo(t) {
+    const r = [];
+    let prof = 0, act = '';
+    for (const c of t) {
+        if (c === '(') prof++;
+        if (c === ')') prof--;
+        if (c === ',' && prof === 0) { r.push(act); act = ''; continue; }
+        act += c;
+    }
+    if (act.trim()) r.push(act);
+    return r;
+}
+
 function traducir(lote) {
     let s = lote;
     s = s.replace(/\bWITH\s*\(\s*NOLOCK\s*\)/gi, '');
@@ -162,6 +222,11 @@ function traducir(lote) {
     s = s.replace(/\bCAST\s*\(\s*([^()]+?)\s+AS\s+DATETIME2?\s*\)/gi, 'datetime($1)');
     // sumar textos con + es de SQL Server, en SQLite se une con dos barras
     s = s.replace(/(\u0001\d+\u0001)\s*\+/g, '$1 ||').replace(/\+\s*(\u0001\d+\u0001)/g, '|| $1');
+
+    if (/^\s*UPDATE\b/i.test(s) && /\bFROM\b/i.test(s)) s = updateConJoin(s);
+    if (/^\s*DELETE\s+(?!FROM\b)\w/i.test(s)) s = deleteConJoin(s);
+    // un default con funcion en SQLite necesita parentesis
+    s = s.replace(/\bDEFAULT\s+(datetime\('now','localtime'\))/gi, 'DEFAULT ($1)');
 
     if (/^\s*CREATE\s+TABLE\b/i.test(s)) {
         s = s.replace(/\bINT\s+IDENTITY\s*\(\s*\d+\s*,\s*\d+\s*\)\s+PRIMARY\s+KEY\b/gi, 'INTEGER PRIMARY KEY AUTOINCREMENT');
@@ -362,17 +427,44 @@ const AGREGADO = /\b(COUNT|SUM|AVG|MIN|MAX)\s*\(/i;
 const norm = x => x.replace(/\s+/g, '').replace(/[\[\]]/g, '').toLowerCase();
 
 // SQLite deja pasar columnas sueltas con GROUP BY, SQL Server no, asi que se revisa aca
+// quita lo que va entre parentesis con SELECT, para no confundir un COUNT de una subconsulta
+function sinSubconsultas(t) {
+    let r = '', prof = 0, dentro = -1;
+    for (let i = 0; i < t.length; i++) {
+        const c = t[i];
+        if (c === '(') {
+            if (dentro < 0 && /^\(\s*SELECT\b/i.test(t.slice(i))) dentro = prof;
+            prof++;
+            if (dentro >= 0) continue;
+        } else if (c === ')') {
+            prof--;
+            if (dentro >= 0) {
+                if (prof === dentro) { dentro = -1; r += '0'; }
+                continue;
+            }
+        } else if (dentro >= 0) continue;
+        r += c;
+    }
+    return r;
+}
+
 function revisarAgrupado(lote) {
     if (!/^\s*SELECT\b/i.test(lote)) return null;
     const p = partes(lote);
     if (!p || !p.select) return null;
-    const cols = porComas(p.select).map(c => c.replace(/\s+AS\s+[\w\[\]]+$/i, '').replace(/\s+\[[^\]]+\]$/, ''));
+    const crudas = porComas(p.select);
+    const aliasDe = c => (/\s+AS\s+\[?([^\]]+?)\]?\s*$/i.exec(c) || /\)\s+\[?(\w+)\]?\s*$/.exec(c) || /^\s*[\w.]+\s+\[?(\w+)\]?\s*$/.exec(c) || [])[1];
+    const alias = crudas.map(aliasDe).filter(Boolean).map(x => x.toLowerCase().replace(/\s+/g, ''));
+    const cols = crudas.map(c => sinSubconsultas(c.replace(/\s+AS\s+[\w\[\]]+$/i, '').replace(/\s+\[[^\]]+\]$/, '')));
     const hayAgregado = cols.some(c => AGREGADO.test(c));
     if (!p.groupBy && !hayAgregado) return null;
     const grupo = p.groupBy ? porComas(p.groupBy).map(norm) : [];
+    // agrupar por el alias no se puede, el GROUP BY corre antes que el SELECT
+    const conAlias = grupo.find(g => alias.includes(g) && !cols.some(c => norm(c) === g || norm(c).endsWith('.' + g)));
+    if (conAlias) return `En SQL Server no puedes agrupar por el alias ${conAlias}, porque el GROUP BY se ejecuta antes que el SELECT y ese nombre todavía no existe. Repite la expresión completa en el GROUP BY. Es el error 207.`;
     for (const c of cols) {
         if (AGREGADO.test(c) || c.trim() === '*' && !p.groupBy) continue;
-        if (/^\s*[\d.]+\s*$/.test(c) || /^'.*'$/.test(c.trim())) continue;
+        if (/^\s*[\d.]+\s*$/.test(c) || /^'.*'$/.test(c.trim()) || c.trim() === '0') continue;
         const n = norm(c);
         const sinAlias = n.replace(/^\w+\./, '');
         if (grupo.includes(n) || grupo.some(g => g.replace(/^\w+\./, '') === sinAlias)) continue;
@@ -396,7 +488,16 @@ export function tablaObjetivo(lote) {
     const { s } = proteger(lote);
     let m;
     if ((m = /^\s*INSERT\s+(?:INTO\s+)?([\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
+    // con JOIN lo que va despues del UPDATE o del DELETE puede ser el alias
+    const resolver = (nombre, from) => {
+        const piezas = from ? piezasFrom(from.split(/\bWHERE\b/i)[0]) : null;
+        const n = limpiaNombre(nombre).toLowerCase();
+        const p = piezas && piezas.find(x => x.alias.toLowerCase() === n || x.tabla.toLowerCase() === n);
+        return p ? p.tabla : limpiaNombre(nombre);
+    };
+    if ((m = /^\s*UPDATE\s+([\w\[\]\.]+)[\s\S]*?\bFROM\s+([\s\S]+)$/i.exec(s))) return resolver(m[1], m[2]);
     if ((m = /^\s*UPDATE\s+([\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
+    if ((m = /^\s*DELETE\s+(?!FROM\b)([\w\[\]\.]+)\s+FROM\s+([\s\S]+)$/i.exec(s))) return resolver(m[1], m[2]);
     if ((m = /^\s*DELETE\s+(?:FROM\s+)?([\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
     if ((m = /^\s*TRUNCATE\s+TABLE\s+([\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
     return null;

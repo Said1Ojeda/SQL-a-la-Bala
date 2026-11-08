@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SQL a la Bala</title>
+<meta name="description" content="Aprende SQL Server con lecciones cortas, retos y consultas que corren de verdad en el navegador, con los datos de la tienda de don Chepe.">
+<meta name="theme-color" content="#0d625d">
+<meta property="og:title" content="SQL a la Bala">
+<meta property="og:description" content="SELECT, INSERT, UPDATE, DELETE y los JOIN con lecciones cortas y retos. Todo corre en tu navegador.">
+<meta property="og:image" content="https://said1ojeda.github.io/sql-a-la-bala/docs/inicio.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="img/icono.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&family=Lilita+One&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/bala.css">
+<script>
+  try { var t = localStorage.getItem('bala.tema'); if (t) document.documentElement.dataset.tema = t; } catch (e) {}
+</script>
+</head>
+<body>
+<a class="saltar" href="#contenido">Saltar al contenido</a>
+
+<header class="cabeza">
+  <div class="toldo" aria-hidden="true"></div>
+  <div class="cabeza-dentro">
+    <a class="marca" href="#/" aria-label="SQL a la Bala, inicio">
+      <span class="marca-rotulo">SQL a la Bala</span>
+      <small>en la tienda de don Chepe</small>
+    </a>
+    <nav class="menu" aria-label="Secciones">
+      <a href="#/" data-vista="inicio">Lecciones</a>
+      <a href="#/laboratorio" data-vista="laboratorio">Laboratorio</a>
+      <a href="#/chuleta" data-vista="chuleta">Chuleta</a>
+      <a href="#/repaso" data-vista="repaso">Repaso<span class="globo" id="globo-repaso" hidden>0</span></a>
+    </nav>
+    <div class="marcador">
+      <span title="Días seguidos practicando">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 3c.4 1.6-.3 2.7-1.2 3.3 3.8.9 6.7 4.2 6.7 8.2 0 3.6-2.6 6.5-6.5 6.5S5 18 5 14.6c0-2.7 1.4-4.6 2.9-5.6-.2 1.5.4 2.6 1.4 3-.3-3.9 1.5-7.4 4.2-9z" fill="#ff5a4e"/><path d="M12.5 7.3c-.9.5-1 1.2-.6 1.9" stroke="#2a8c3b" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+        <b id="racha">0</b><span class="oculto"> días de racha</span>
+      </span>
+      <span title="Puntos ganados">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#ffcf33" stroke="#c99a00" stroke-width="2"/><path d="M14.6 9.2a3 3 0 1 0 0 5.6M13.6 13.8l2 2" stroke="#7a5d00" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+        <b id="xp">0</b><span class="oculto"> XP</span>
+      </span>
+    </div>
+    <button type="button" class="boton-tema" id="tema" aria-label="Cambiar entre tema claro y oscuro">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="contenido" tabindex="-1">
+  <div class="tarjeta" style="max-width:520px;margin:40px auto;text-align:center"><h2>Abriendo la tienda</h2><p>Cargando el motor de SQL en tu navegador.</p></div>
+</main>
+
+<div class="veredicto" id="veredicto" aria-live="polite"></div>
+
+<footer class="pie">
+  Hecho por <a href="https://github.com/Said1Ojeda" target="_blank" rel="noopener">Said Ojeda</a>. El motor es SQLite en el navegador con una capa que traduce lo más común de SQL Server.
+</footer>
+
+<script src="vendor/sql-wasm.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

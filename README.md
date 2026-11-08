@@ -12,21 +12,28 @@ Los `INSERT`, `UPDATE`, `DELETE` y los `JOIN` se olvidan si no se usan seguido, 
 
 ## Lo que tiene
 
-- **15 lecciones en 5 unidades**: consultar, modificar, resumir, unir tablas, subconsultas y funciones. Son 93 ejercicios en total.
+- **18 lecciones en 5 unidades**: consultar, modificar, resumir, unir tablas y más allá. Incluye UPDATE y DELETE con JOIN como se escriben en SQL Server, CASE y crear tablas. Son 111 ejercicios en total.
 - **Tres tipos de ejercicio**: escribir la consulta, armarla con fichas o escoger la respuesta. También hay de adivinar cuántas filas salen y de encontrar el error.
 - **Revisión de verdad**: tu consulta y la solución corren cada una en una tienda nueva y se comparan los resultados. Si llegas a lo mismo por otro camino, también vale.
+- **Qué no cuadra**: cuando fallas te enseña exactamente qué filas te faltaron y cuáles te sobraron, en vez de solo decir que está mal.
 - **El JOIN dibujado**: las filas de las dos tablas con líneas entre las parejas. Las que no tienen pareja se quedan solas o salen con `NULL`, según el tipo de JOIN.
 - **El orden real de la consulta**: la corre paso a paso como la ejecuta SQL Server, `FROM`, `WHERE`, `GROUP BY`, `HAVING`, `SELECT` y `ORDER BY`, mostrando la tabla en cada etapa.
 - **Modo seguro**: antes de correr un `UPDATE` o `DELETE` sin `WHERE` te avisa cuántas filas va a tocar. Después de cualquier cambio te enseña qué filas cambiaron y te deja escoger entre `COMMIT` y `ROLLBACK`.
 - **Repaso con cajas**: lo que fallas vuelve al día siguiente, luego a los 3 días, a la semana y así, hasta que se queda.
+- **Examen a la bala**: 10 ejercicios al azar, 10 minutos y sin pistas. Al final ves tu nota, tu mejor marca y la solución de los que fallaste.
+- **Mi avance**: XP, racha, avance por unidad y 13 medallas para ir ganando.
 - **Chuleta**: los moldes de cada operación en el orden en que se escriben, y los errores de SQL Server que más salen con su número.
-- **Racha y XP**, tema claro y oscuro, y funciona en el cel con teclas rápidas para no escribir todo a mano.
+- **Racha y XP**, tema claro y oscuro, y funciona en el cel con teclas rápidas. Cuando escribes el nombre de una tabla aparecen también sus columnas.
 
 ![El JOIN dibujado](docs/join.png)
 
 ![El orden de ejecución](docs/orden.png)
 
 ![Modo seguro](docs/seguro.png)
+
+![Lo que no cuadra](docs/explica.png)
+
+![Examen](docs/examen.png)
 
 ## Cómo está hecho
 
@@ -36,6 +43,7 @@ El motor es [sql.js](https://github.com/sql-js/sql.js), que es SQLite compilado 
 
 | SQL Server | Cómo lo resuelve |
 |---|---|
+| `UPDATE p SET ... FROM productos p JOIN ...` y `DELETE d FROM ... JOIN ...` | se reescriben para SQLite con el mismo resultado |
 | `TOP 5`, `OFFSET ... FETCH` | se vuelve `LIMIT`, también dentro de subconsultas |
 | `GETDATE()`, `DATEDIFF`, `DATEADD`, `DATEPART`, `YEAR`, `MONTH`, `DAY` | funciones propias con las mismas reglas, el 31 más un mes cae en el último día del mes |
 | `CONVERT(VARCHAR, fecha, 103)` | estilos 101, 103, 23, 108 y 120 |
@@ -44,6 +52,7 @@ El motor es [sql.js](https://github.com/sql-js/sql.js), que es SQLite compilado 
 | `BEGIN TRAN`, `COMMIT`, `ROLLBACK`, `@@ROWCOUNT`, `SCOPE_IDENTITY()` | transacciones de verdad |
 | `INT IDENTITY(1,1)`, `NVARCHAR(50)` | autoincremento y textos sin distinguir mayúsculas, como el collation por defecto |
 | Columnas fuera del `GROUP BY` | da el error 8120 como SQL Server, aunque SQLite sí lo dejaría pasar |
+| Agrupar por un alias del `SELECT` | da error como en SQL Server y explica por qué |
 | Instrucciones sin punto y coma | se separan por renglón, como en SSMS |
 
 Los errores salen explicados en español y con el número que tendrían en SQL Server, por ejemplo 207, 208, 547 y 8120.
@@ -56,7 +65,7 @@ Los errores salen explicados en español y con el número que tendrían en SQL S
 | `js/leccion.js` | el flujo de cada lección y la revisión |
 | `js/visual.js` | el JOIN dibujado y el orden de ejecución |
 | `js/app.js` | rutas, inicio, laboratorio, chuleta y repaso |
-| `js/progreso.js` | XP, racha y repaso, guardados en el navegador |
+| `js/progreso.js` | XP, racha, repaso, examen y medallas, guardados en el navegador |
 
 ## La tienda de don Chepe
 

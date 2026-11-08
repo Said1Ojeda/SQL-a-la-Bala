@@ -134,29 +134,49 @@ function esperadoHTML(ej) {
     } catch (e) { return ''; }
 }
 
-export function abrirLeccion(raiz, { leccion, ejercicios, titulo, alSalir, alTerminar }) {
+export function abrirLeccion(raiz, { leccion, ejercicios, examen, alSalir, alTerminar }) {
     const veredicto = document.getElementById('veredicto');
     const lista = ejercicios || leccion.ejercicios;
     const cola = lista.map(e => ({ ej: e, intento: 0 }));
     const total = cola.length;
     let hechos = 0, errores = 0, xp = 0;
-    const esRepaso = !leccion;
+    const esRepaso = !leccion && !examen;
+    // en el examen no hay pistas ni segunda vuelta, y corre el reloj
+    const fallados = [];
+    let reloj = null, quedan = examen ? examen.segundos : 0, terminado = false;
+    const inicio = Date.now();
 
     raiz.innerHTML = `<div class="leccion">
         <div class="barra-leccion">
             <button type="button" class="cerrar" aria-label="Salir de la lección"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
             <div class="avance" role="progressbar" aria-label="Avance" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="0"><div></div></div>
-            <span class="vidas-xp" aria-live="polite"><span class="xp-lec">0</span> XP</span>
+            ${examen ? '<span class="vidas-xp reloj" aria-live="off"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg><span class="tiempo"></span></span>' : '<span class="vidas-xp" aria-live="polite"><span class="xp-lec">0</span> XP</span>'}
         </div>
         <div class="tarjeta" id="tarjeta"></div>
     </div>`;
     const tarjeta = raiz.querySelector('#tarjeta');
-    raiz.querySelector('.cerrar').addEventListener('click', () => { cerrarVeredicto(); alSalir(); });
+    raiz.querySelector('.cerrar').addEventListener('click', () => { parar(); cerrarVeredicto(); alSalir(); });
+
+    function parar() { if (reloj) clearInterval(reloj); reloj = null; }
+    const mmss = n => Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
+    if (examen) {
+        const t = raiz.querySelector('.tiempo');
+        t.textContent = mmss(quedan);
+        reloj = setInterval(() => {
+            // si ya se salio de la pantalla el reloj se apaga solo
+            if (!document.body.contains(tarjeta)) return parar();
+            quedan--;
+            t.textContent = mmss(Math.max(0, quedan));
+            raiz.querySelector('.reloj').classList.toggle('apurado', quedan <= 60);
+            if (quedan <= 0) { parar(); cerrarVeredicto(); final(true); }
+        }, 1000);
+    }
 
     const avanzar = () => {
         raiz.querySelector('.avance div').style.width = (hechos / total * 100) + '%';
         raiz.querySelector('.avance').setAttribute('aria-valuenow', hechos);
-        raiz.querySelector('.xp-lec').textContent = xp;
+        const x = raiz.querySelector('.xp-lec');
+        if (x) x.textContent = xp;
     };
 
     function cerrarVeredicto() {
@@ -220,6 +240,14 @@ export function abrirLeccion(raiz, { leccion, ejercicios, titulo, alSalir, alTer
         delete tarjeta.dataset.cerrado;
         window.scrollTo({ top: 0, behavior: 'smooth' });
         const listo = acierto => {
+            if (examen) {
+                hechos++;
+                if (acierto) { xp += 15; progreso.sumarXp(15); }
+                else { errores++; fallados.push(ej); progreso.anotarRepaso(ej.id, false); }
+                avanzar();
+                document.dispatchEvent(new CustomEvent('bala:progreso'));
+                return;
+            }
             if (acierto) {
                 hechos++;
                 const gana = item.intento === 0 ? 10 : 5;
@@ -251,7 +279,7 @@ export function abrirLeccion(raiz, { leccion, ejercicios, titulo, alSalir, alTer
             <div class="pista" hidden></div>
             <div class="acciones">
                 <button type="button" class="btn suave chico" data-correr>Probar</button>
-                ${ej.pista ? '<button type="button" class="btn suave chico" data-pista>Una pista</button>' : ''}
+                ${ej.pista && !examen ? '<button type="button" class="btn suave chico" data-pista>Una pista</button>' : ''}
                 <button type="button" class="btn derecha" data-revisar>Comprobar</button>
             </div>
             <div class="salida"></div>`;
@@ -282,7 +310,7 @@ export function abrirLeccion(raiz, { leccion, ejercicios, titulo, alSalir, alTer
             }
             revisar.disabled = true;
             listo(c.bien);
-            abrirVeredicto(c.bien, c.bien ? (ej.explica || '') : c.motivo, c.bien ? '' : ej.solucion, siguiente);
+            abrirVeredicto(c.bien, c.bien ? (ej.explica || '') : c.motivo, c.bien || examen ? '' : ej.solucion, siguiente);
         });
     }
 
@@ -329,7 +357,7 @@ export function abrirLeccion(raiz, { leccion, ejercicios, titulo, alSalir, alTer
             if (c.salida) tarjeta.querySelector('.salida').innerHTML = (c.bien ? '' : explicaHTML(c)) + salidaHTML(c.salida);
             revisar.disabled = true;
             listo(c.bien);
-            abrirVeredicto(c.bien, c.bien ? (ej.explica || '') : c.motivo, c.bien ? '' : ej.fichas.join(' '), siguiente);
+            abrirVeredicto(c.bien, c.bien ? (ej.explica || '') : c.motivo, c.bien || examen ? '' : ej.fichas.join(' '), siguiente);
         });
     }
 
@@ -372,9 +400,42 @@ export function abrirLeccion(raiz, { leccion, ejercicios, titulo, alSalir, alTer
         });
     }
 
-    function final() {
+    function finalExamen(porTiempo) {
+        const nota = Math.round((total - errores - (total - hechos)) / total * 100);
+        const usados = Math.round((Date.now() - inicio) / 1000);
+        const marca = progreso.registrarExamen(nota);
+        document.dispatchEvent(new CustomEvent('bala:progreso'));
+        raiz.querySelector('.avance div').style.width = '100%';
+        tarjeta.classList.add('final');
+        const solucion = e => e.tipo === 'fichas' ? e.fichas.join(' ') : e.tipo === 'escribe' ? e.solucion : e.opciones[e.correcta];
+        const sinHacer = cola.map(x => x.ej);
+        const repasar = [...fallados, ...sinHacer];
+        tarjeta.innerHTML = `
+            <h2>${porTiempo ? 'Se acabó el tiempo' : 'Examen terminado'}</h2>
+            <div class="nota ${nota >= 70 ? 'paso' : 'no-paso'}"><b>${nota}</b><span>de 100</span></div>
+            ${marca ? '<p class="marca-nueva">Nueva mejor marca</p>' : ''}
+            <div class="final-datos">
+                <div><b>${total - errores - sinHacer.length}</b>buenas</div>
+                <div><b>${errores}</b>malas</div>
+                <div><b>${mmss(Math.min(usados, examen.segundos))}</b>de tiempo</div>
+            </div>
+            ${repasar.length ? `<div class="revision"><h3>Para repasar</h3><p>Estos ya quedaron guardados en tu repaso.</p>
+                ${repasar.map(e => `<div class="revision-item"><p>${esc(e.enunciado)}</p>${e.tipo === 'elige' ? `<p class="respuesta">${esc(solucion(e))}</p>` : `<pre class="pizarra">${resaltar(solucion(e))}</pre>`}</div>`).join('')}
+            </div>` : '<p>Todas buenas. Ya puedes con la tienda entera.</p>'}
+            <div class="acciones" style="justify-content:center"><button type="button" class="btn" data-fin>Listo</button></div>`;
+        sinHacer.forEach(e => progreso.anotarRepaso(e.id, false));
+        tarjeta.querySelector('[data-fin]').addEventListener('click', alTerminar);
+        tarjeta.querySelector('[data-fin]').focus();
+    }
+
+    function final(porTiempo) {
+        if (terminado) return;
+        terminado = true;
+        parar();
+        if (examen) return finalExamen(porTiempo === true);
         const estrellas = errores === 0 ? 3 : errores <= 2 ? 2 : 1;
         if (!esRepaso) progreso.terminarLeccion(leccion.id, estrellas);
+        else progreso.contarRepaso();
         document.dispatchEvent(new CustomEvent('bala:progreso'));
         raiz.querySelector('.avance div').style.width = '100%';
         tarjeta.classList.add('final');
@@ -394,6 +455,6 @@ export function abrirLeccion(raiz, { leccion, ejercicios, titulo, alSalir, alTer
     }
 
     avanzar();
-    if (esRepaso) siguiente();
-    else idea();
+    if (leccion) idea();
+    else siguiente();
 }

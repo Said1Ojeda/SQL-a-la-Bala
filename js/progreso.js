@@ -13,7 +13,7 @@ function cargar() {
     return nuevo();
 }
 function nuevo() {
-    return { xp: 0, racha: { dias: 0, ultimo: null }, lecciones: {}, repaso: {} };
+    return { xp: 0, racha: { dias: 0, ultimo: null, mejor: 0 }, lecciones: {}, repaso: {}, examen: { mejor: null, intentos: 0 }, lab: 0, repasos: 0 };
 }
 function guardar() {
     try { localStorage.setItem(CLAVE, JSON.stringify(p)); } catch (e) { }
@@ -44,6 +44,7 @@ function marcarDia() {
     if (p.racha.ultimo === h) return;
     p.racha.dias = p.racha.ultimo === sumarDias(h, -1) ? p.racha.dias + 1 : 1;
     p.racha.ultimo = h;
+    p.racha.mejor = Math.max(p.racha.mejor || 0, p.racha.dias);
 }
 
 export function sumarXp(n) {
@@ -83,6 +84,26 @@ export function pendientes() {
 
 export function enRepaso() {
     return Object.keys(p.repaso).length;
+}
+
+export function registrarExamen(nota) {
+    p.examen = p.examen || { mejor: null, intentos: 0 };
+    const nuevaMarca = p.examen.mejor === null || nota > p.examen.mejor;
+    p.examen.intentos++;
+    if (nuevaMarca) p.examen.mejor = nota;
+    marcarDia();
+    guardar();
+    return nuevaMarca;
+}
+
+export function contarLab() {
+    p.lab = (p.lab || 0) + 1;
+    guardar();
+}
+
+export function contarRepaso() {
+    p.repasos = (p.repasos || 0) + 1;
+    guardar();
 }
 
 export function borrarTodo() {

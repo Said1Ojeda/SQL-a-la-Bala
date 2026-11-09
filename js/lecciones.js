@@ -6,7 +6,7 @@ export const UNIDADES = [
     { id: 'u2', titulo: 'Modificar', lema: 'Agregar, cambiar y borrar con cuidado' },
     { id: 'u3', titulo: 'Resumir', lema: 'Las cuentas de fin de mes' },
     { id: 'u4', titulo: 'Unir tablas', lema: 'Juntar la libreta con el inventario' },
-    { id: 'u5', titulo: 'Más allá', lema: 'Subconsultas y funciones del día a día' }
+    { id: 'u5', titulo: 'Más allá', lema: 'Subconsultas, funciones, CASE y tablas nuevas' }
 ];
 
 const NOMBRE = { re: '\\bnombre\\b', msg: 'Trae la columna nombre.' };
@@ -222,6 +222,22 @@ export const LECCIONES = [
         ]
     },
 
+    {
+        id: 'joindml', unidad: 'u4', titulo: 'UPDATE y DELETE con JOIN',
+        idea: `<p>En el trabajo muchas veces hay que cambiar filas según lo que dice <b>otra tabla</b>. En SQL Server se escribe <code>UPDATE alias</code>, luego el <code>SET</code>, y después un <code>FROM</code> con los JOIN igual que en un SELECT.</p>
+               <p>La costumbre segura es escribir primero el <b>SELECT</b> con el mismo FROM, JOIN y WHERE. Si trae justo las filas que quieres, cambias el SELECT por el UPDATE o el DELETE.</p>`,
+        molde: "UPDATE p\nSET p.columna = valor\nFROM productos p\nINNER JOIN categorias c ON c.id = p.categoria_id\nWHERE c.nombre = 'Bebidas';\n\nDELETE d\nFROM detalle_venta d\nINNER JOIN productos p ON p.id = d.producto_id\nWHERE condición;",
+        ejemplo: "SELECT p.nombre, p.precio\nFROM productos p\nINNER JOIN categorias c ON c.id = p.categoria_id\nWHERE c.nombre = 'Lácteos';\n\nUPDATE p\nSET p.precio = p.precio + 1\nFROM productos p\nINNER JOIN categorias c ON c.id = p.categoria_id\nWHERE c.nombre = 'Lácteos';",
+        ejercicios: [
+            { tipo: 'escribe', enunciado: "Súbele Q2 a todo lo de 'Panadería'. Hazlo con UPDATE y un JOIN a categorias, filtrando por el nombre de la categoría.", solucion: "UPDATE p\nSET p.precio = p.precio + 2\nFROM productos p\nINNER JOIN categorias c ON c.id = p.categoria_id\nWHERE c.nombre = 'Panadería';", revisa: 'SELECT id, precio FROM productos ORDER BY id', exige: [{ re: '\\bJOIN\\b', msg: 'Hazlo con un JOIN a categorias.' }, { re: "Panader", msg: "Filtra por el nombre, 'Panadería'." }], pista: 'UPDATE p SET p.precio = p.precio + 2 FROM productos p INNER JOIN categorias c ON ...' },
+            { tipo: 'elige', enunciado: '¿Qué tabla cambia con esto?', codigo: "UPDATE p\nSET p.existencia = 0\nFROM productos p\nINNER JOIN categorias c ON c.id = p.categoria_id\nWHERE c.nombre = 'Limpieza';", opciones: ['productos, la del alias que va después del UPDATE', 'categorias', 'Las dos', 'Ninguna, falta el WHERE'], correcta: 0, correr: true, explica: 'Solo cambia la tabla cuyo alias pones después del UPDATE. La otra solo se usa para filtrar.' },
+            { tipo: 'escribe', enunciado: 'Se acabó todo lo que llevó la venta 10. Ponle existencia 0 a esos productos, uniendo productos con detalle_venta.', solucion: 'UPDATE p\nSET p.existencia = 0\nFROM productos p\nINNER JOIN detalle_venta d ON d.producto_id = p.id\nWHERE d.venta_id = 10;', revisa: 'SELECT id, existencia FROM productos ORDER BY id', exige: [{ re: '\\bJOIN\\b', msg: 'Une productos con detalle_venta usando JOIN.' }] },
+            { tipo: 'escribe', enunciado: 'Borra de detalle_venta todos los renglones de productos de Limpieza, la categoría 5. Usa DELETE con JOIN a productos.', solucion: 'DELETE d\nFROM detalle_venta d\nINNER JOIN productos p ON p.id = d.producto_id\nWHERE p.categoria_id = 5;', revisa: 'SELECT venta_id, producto_id FROM detalle_venta ORDER BY venta_id, producto_id', exige: [{ re: '\\bJOIN\\b', msg: 'Hazlo con un JOIN a productos.' }], pista: 'DELETE d FROM detalle_venta d INNER JOIN productos p ON ... WHERE p.categoria_id = 5' },
+            { tipo: 'fichas', enunciado: "Arma el UPDATE que le baja 10% a todas las Bebidas.", fichas: ['UPDATE p', 'SET p.precio = p.precio * 0.9', 'FROM productos p', 'INNER JOIN categorias c', 'ON c.id = p.categoria_id', "WHERE c.nombre = 'Bebidas'"], extra: ['SELECT *', 'LEFT JOIN'], revisa: 'SELECT id, precio FROM productos ORDER BY id' },
+            { tipo: 'elige', enunciado: 'Antes de correr un UPDATE con JOIN en producción, ¿qué conviene hacer?', opciones: ['Correr el SELECT con el mismo FROM, JOIN y WHERE para ver qué filas salen', 'Quitar el WHERE para que no falle', 'Correrlo dos veces', 'Cambiar el INNER por LEFT por si acaso'], correcta: 0, explica: 'Si el SELECT trae justo lo que quieres tocar, el UPDATE va a tocar esas mismas filas.' }
+        ]
+    },
+
     // unidad 5
     {
         id: 'subconsultas', unidad: 'u5', titulo: 'Consultas dentro de consultas',
@@ -250,7 +266,37 @@ export const LECCIONES = [
             { tipo: 'elige', enunciado: '¿Qué número sale?', codigo: "SELECT DATEDIFF(day, '2026-10-01', '2026-10-31');", opciones: ['30', '31', '29', '1'], correcta: 0, correr: true, explica: 'DATEDIFF cuenta los cambios de día entre las dos fechas, del 1 al 31 son 30.' },
             { tipo: 'escribe', enunciado: 'Nombre y cuántos días pasaron desde que cada cliente se registró hasta el 31 de octubre de 2026.', solucion: "SELECT nombre, DATEDIFF(day, fecha_registro, '2026-10-31') FROM clientes;", exige: [{ re: '\\bDATEDIFF\\s*\\(', msg: 'Usa DATEDIFF.' }] }
         ]
-    }
+    },
+    {
+        id: 'case', unidad: 'u5', titulo: 'Clasificar con CASE',
+        idea: `<p><code>CASE</code> es el <b>si esto, entonces aquello</b> de SQL. Revisa las condiciones en orden y se queda con la primera que se cumple. Si ninguna se cumple y no hay <code>ELSE</code>, sale NULL.</p>
+               <p>Para algo de dos caminos también está <code>IIF(condición, si, no)</code>. Y si quieres agrupar por un CASE, en el GROUP BY va la expresión completa, el alias no sirve ahí.</p>`,
+        molde: "SELECT nombre,\n       CASE\n           WHEN condición1 THEN 'valor1'\n           WHEN condición2 THEN 'valor2'\n           ELSE 'otro'\n       END AS clasificacion\nFROM tabla;",
+        ejemplo: "SELECT nombre, precio,\n       CASE\n           WHEN precio < 5 THEN 'Barato'\n           WHEN precio <= 15 THEN 'Normal'\n           ELSE 'Caro'\n       END AS rango\nFROM productos;",
+        ejercicios: [
+            { tipo: 'escribe', enunciado: "El nombre de cada producto y una columna que diga 'Agotado' si la existencia es 0, y si no 'Hay'.", solucion: "SELECT nombre, CASE WHEN existencia = 0 THEN 'Agotado' ELSE 'Hay' END FROM productos;", pista: "CASE WHEN existencia = 0 THEN 'Agotado' ELSE 'Hay' END" },
+            { tipo: 'elige', enunciado: '¿Qué sale para el café, que cuesta Q38?', codigo: "SELECT CASE\n    WHEN precio < 5 THEN 'Barato'\n    WHEN precio <= 15 THEN 'Normal'\nEND\nFROM productos\nWHERE id = 7;", opciones: ['NULL, porque no hay ELSE', "'Normal'", "'Barato'", 'Da error'], correcta: 0, correr: true, explica: 'Ninguna condición se cumple y sin ELSE el CASE devuelve NULL.' },
+            { tipo: 'escribe', enunciado: "Nombre y rango de precio de cada producto, 'Barato' si cuesta menos de 5, 'Normal' hasta 15 y 'Caro' lo demás.", solucion: "SELECT nombre, CASE WHEN precio < 5 THEN 'Barato' WHEN precio <= 15 THEN 'Normal' ELSE 'Caro' END FROM productos;" },
+            { tipo: 'escribe', enunciado: "¿Cuántos productos hay de cada rango, Barato, Normal y Caro? Agrupa por el mismo CASE.", solucion: "SELECT CASE WHEN precio < 5 THEN 'Barato' WHEN precio <= 15 THEN 'Normal' ELSE 'Caro' END, COUNT(*) FROM productos GROUP BY CASE WHEN precio < 5 THEN 'Barato' WHEN precio <= 15 THEN 'Normal' ELSE 'Caro' END;", pista: 'El GROUP BY lleva el CASE completo otra vez, el alias no se puede usar ahí.' },
+            { tipo: 'fichas', enunciado: "Arma la consulta que muestra el teléfono de cada cliente, o 'Sin teléfono' si no tiene.", fichas: ['SELECT', 'nombre,', "IIF(telefono IS NULL, 'Sin teléfono', telefono)", 'FROM', 'clientes'], extra: ["IIF(telefono = NULL, 'Sin teléfono', telefono)", 'WHERE'] },
+            { tipo: 'escribe', enunciado: "En una sola fila, cuántas ventas fueron al fiado y cuántas no. Usa SUM con CASE.", solucion: "SELECT SUM(CASE WHEN metodo_pago = 'Fiado' THEN 1 ELSE 0 END), SUM(CASE WHEN metodo_pago <> 'Fiado' THEN 1 ELSE 0 END) FROM ventas;", exige: [{ re: '\\bSUM\\s*\\(\\s*CASE\\b', msg: 'Usa SUM(CASE WHEN ... THEN 1 ELSE 0 END).' }], pista: "SUM(CASE WHEN metodo_pago = 'Fiado' THEN 1 ELSE 0 END)" }
+        ]
+    },
+    {
+        id: 'tablas', unidad: 'u5', titulo: 'Crear y cambiar tablas',
+        idea: `<p><code>CREATE TABLE</code> arma una tabla nueva. Cada columna lleva su <b>tipo</b>, como <code>INT</code>, <code>NVARCHAR(80)</code>, <code>DECIMAL(10,2)</code>, <code>DATE</code> o <code>BIT</code>, y sus reglas, como <code>NOT NULL</code>, <code>DEFAULT</code>, <code>PRIMARY KEY</code> y <code>REFERENCES</code> para la llave foránea.</p>
+               <p><code>ALTER TABLE ... ADD</code> le agrega una columna a una tabla que ya existe.</p>`,
+        molde: 'CREATE TABLE nombre (\n    id INT IDENTITY(1,1) PRIMARY KEY,\n    columna NVARCHAR(80) NOT NULL,\n    otra_id INT NOT NULL REFERENCES otra(id),\n    fecha DATE NOT NULL DEFAULT GETDATE()\n);\n\nALTER TABLE nombre ADD nueva BIT NOT NULL DEFAULT 1;',
+        ejemplo: "CREATE TABLE proveedores (\n    id INT IDENTITY(1,1) PRIMARY KEY,\n    nombre NVARCHAR(80) NOT NULL,\n    telefono NVARCHAR(9) NULL\n);\n\nINSERT INTO proveedores (nombre) VALUES ('Distribuidora El Ahorro');\nSELECT * FROM proveedores;",
+        ejercicios: [
+            { tipo: 'escribe', enunciado: 'Crea la tabla proveedores con id INT IDENTITY como llave primaria, nombre NVARCHAR(80) obligatorio y telefono NVARCHAR(9) que puede ir vacío.', solucion: 'CREATE TABLE proveedores (\n    id INT IDENTITY(1,1) PRIMARY KEY,\n    nombre NVARCHAR(80) NOT NULL,\n    telefono NVARCHAR(9) NULL\n);', revisa: "SELECT name, [notnull], pk FROM pragma_table_info('proveedores')", pista: 'Las columnas van separadas por coma dentro de los paréntesis.' },
+            { tipo: 'elige', enunciado: '¿Qué hace IDENTITY(1,1)?', opciones: ['Numera solo cada fila nueva, empezando en 1 y sumando 1', 'Hace que la columna no se repita', 'Pone 1 en todas las filas', 'Obliga a mandar el id en cada INSERT'], correcta: 0, explica: 'El primer número es el inicio y el segundo cuánto sube. Por eso en el INSERT no se manda el id.' },
+            { tipo: 'escribe', enunciado: 'Agrégale a productos una columna activo de tipo BIT, obligatoria y con 1 por defecto.', solucion: 'ALTER TABLE productos ADD activo BIT NOT NULL DEFAULT 1;', revisa: 'SELECT id, activo FROM productos ORDER BY id', exige: [{ re: '\\bALTER\\s+TABLE\\b', msg: 'Usa ALTER TABLE productos ADD ...' }] },
+            { tipo: 'escribe', enunciado: 'Crea la tabla pagos con id IDENTITY de llave primaria, venta_id obligatorio que apunte a ventas(id), monto DECIMAL(10,2) obligatorio y fecha DATE obligatoria.', solucion: 'CREATE TABLE pagos (\n    id INT IDENTITY(1,1) PRIMARY KEY,\n    venta_id INT NOT NULL REFERENCES ventas(id),\n    monto DECIMAL(10,2) NOT NULL,\n    fecha DATE NOT NULL\n);', revisa: "SELECT name, [notnull], pk, (SELECT COUNT(*) FROM pragma_foreign_key_list('pagos') f WHERE f.[from] = c.name) FROM pragma_table_info('pagos') c", pista: 'venta_id INT NOT NULL REFERENCES ventas(id)' },
+            { tipo: 'elige', enunciado: '¿Qué pasa con el INSERT?', codigo: 'CREATE TABLE avisos (\n    id INT IDENTITY(1,1) PRIMARY KEY,\n    texto NVARCHAR(200) NOT NULL\n);\n\nINSERT INTO avisos (id) VALUES (1);', opciones: ['Da error porque texto no acepta vacíos', 'Se guarda con texto vacío', 'Se guarda con texto NULL', 'Da error porque la tabla está vacía'], correcta: 0, correr: true, explica: 'texto es NOT NULL y no tiene DEFAULT, así que el INSERT tiene que mandarlo. Es el error 515.' },
+            { tipo: 'escribe', enunciado: 'Agrégale a clientes una columna correo NVARCHAR(100) que acepte vacíos.', solucion: 'ALTER TABLE clientes ADD correo NVARCHAR(100) NULL;', revisa: "SELECT name, [notnull] FROM pragma_table_info('clientes')" }
+        ]
+    },
 ];
 
 // cada ejercicio lleva un id fijo para el repaso
@@ -261,5 +307,6 @@ export const PRUEBAME = [
     { titulo: 'Clientes sin compras', sql: 'SELECT c.nombre\nFROM clientes c\nLEFT JOIN ventas v ON v.cliente_id = c.id\nWHERE v.id IS NULL;' },
     { titulo: 'Ventas por método', sql: 'SELECT metodo_pago, COUNT(*) AS ventas\nFROM ventas\nGROUP BY metodo_pago\nORDER BY ventas DESC;' },
     { titulo: 'Lo que se vendió por categoría', sql: 'SELECT c.nombre AS categoria,\n       SUM(d.cantidad * d.precio_unitario) AS vendido\nFROM detalle_venta d\nINNER JOIN productos p ON p.id = d.producto_id\nINNER JOIN categorias c ON c.id = p.categoria_id\nGROUP BY c.nombre\nHAVING SUM(d.cantidad * d.precio_unitario) > 20\nORDER BY vendido DESC;' },
+    { titulo: 'UPDATE con JOIN', sql: "SELECT p.nombre, p.precio\nFROM productos p\nINNER JOIN categorias c ON c.id = p.categoria_id\nWHERE c.nombre = 'Bebidas';\n\nUPDATE p\nSET p.precio = p.precio * 0.9\nFROM productos p\nINNER JOIN categorias c ON c.id = p.categoria_id\nWHERE c.nombre = 'Bebidas';" },
     { titulo: 'Subir precios sin miedo', sql: 'BEGIN TRAN;\n\nUPDATE productos\nSET precio = precio * 1.05\nWHERE categoria_id = 1;\n\nSELECT nombre, precio FROM productos WHERE categoria_id = 1;\n\nROLLBACK;' }
 ];

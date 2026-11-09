@@ -37,7 +37,7 @@ function colorear(t) {
 
 const TECLAS = ['SELECT', 'FROM', 'WHERE', '*', ',', '=', "''", '( )', ';', 'AND', 'ORDER BY', 'GROUP BY', 'JOIN', 'ON', 'IS NULL'];
 
-export function crearEditor({ valor = '', alCorrer, teclas = true, tablas = [] } = {}) {
+export function crearEditor({ valor = '', alCorrer, teclas = true, tablas = [], esquema = null } = {}) {
     const caja = document.createElement('div');
     caja.innerHTML = `
         <div class="editor">
@@ -72,12 +72,26 @@ export function crearEditor({ valor = '', alCorrer, teclas = true, tablas = [] }
         const pos = ini + texto.length - retroceso;
         ta.setSelectionRange(pos, pos);
         pintar();
+        ta.dispatchEvent(new Event('input'));
     }
 
     if (teclas) {
         const zona = caja.querySelector('.teclas');
-        const lista = [...TECLAS, ...tablas];
-        zona.innerHTML = lista.map(t => `<button type="button">${esc(t)}</button>`).join('');
+        let ultimas = '';
+        // las columnas salen solas cuando ya escribiste el nombre de su tabla
+        const pintarTeclas = () => {
+            const texto = ta.value.toLowerCase();
+            const usadas = esquema ? Object.keys(esquema).filter(t => new RegExp('\\b' + t + '\\b').test(texto)) : [];
+            const columnas = [...new Set(usadas.flatMap(t => esquema[t]))];
+            const firma = usadas.join(',');
+            if (firma === ultimas && zona.children.length) return;
+            ultimas = firma;
+            const lista = [...TECLAS, ...tablas];
+            zona.innerHTML = lista.map(t => `<button type="button">${esc(t)}</button>`).join('') +
+                columnas.map(c => `<button type="button" class="col">${esc(c)}</button>`).join('');
+        };
+        pintarTeclas();
+        ta.addEventListener('input', pintarTeclas);
         zona.addEventListener('click', ev => {
             const b = ev.target.closest('button');
             if (!b) return;
@@ -93,7 +107,7 @@ export function crearEditor({ valor = '', alCorrer, teclas = true, tablas = [] }
     return {
         nodo: caja,
         get valor() { return ta.value; },
-        set valor(v) { ta.value = v; pintar(); },
+        set valor(v) { ta.value = v; pintar(); ta.dispatchEvent(new Event('input')); },
         enfocar() { ta.focus(); },
         meter
     };

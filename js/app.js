@@ -11,6 +11,7 @@ import * as progreso from './progreso.js';
 
 const raiz = document.getElementById('contenido');
 const NOMBRES_TABLAS = TABLAS.map(t => t.nombre);
+const ESQUEMA = Object.fromEntries(TABLAS.map(t => [t.nombre, t.columnas.map(c => c[0])]));
 
 function guardado(clave, valor) {
     try {
@@ -240,7 +241,7 @@ function vistaLab(sqlInicial) {
                 <div class="panel" role="tabpanel"></div>
             </section>
         </div>`;
-    const editor = crearEditor({ valor: inicial, alCorrer: ejecutarLab, tablas: NOMBRES_TABLAS });
+    const editor = crearEditor({ valor: inicial, alCorrer: ejecutarLab, tablas: NOMBRES_TABLAS, esquema: ESQUEMA });
     raiz.querySelector('.zona-editor').appendChild(editor.nodo);
     const panel = raiz.querySelector('.panel');
     const aviso = raiz.querySelector('.aviso');

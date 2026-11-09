@@ -10,6 +10,7 @@ const BIEN = ['¡A la bala!', '¡Eso!', '¡Así mero!', '¡De una!', '¡Bien hec
 const MAL = ['Casi', 'Todavía no', 'Revisa otra vez', 'Ahí no era'];
 const azar = l => l[Math.floor(Math.random() * l.length)];
 const NOMBRES_TABLAS = TABLAS.map(t => t.nombre);
+const ESQUEMA = Object.fromEntries(TABLAS.map(t => [t.nombre, t.columnas.map(c => c[0])]));
 
 function barajar(l) {
     const a = [...l];
@@ -214,7 +215,7 @@ export function abrirLeccion(raiz, { leccion, ejercicios, examen, alSalir, alTer
                 <button type="button" class="btn derecha" data-empezar>A practicar</button>
             </div>
             <div class="salida"></div>`;
-        const editor = crearEditor({ valor: leccion.ejemplo, alCorrer: correr, tablas: NOMBRES_TABLAS });
+        const editor = crearEditor({ valor: leccion.ejemplo, alCorrer: correr, tablas: NOMBRES_TABLAS, esquema: ESQUEMA });
         tarjeta.querySelector('.zona-editor').appendChild(editor.nodo);
         function correr() {
             const sql = editor.valor;
@@ -283,7 +284,7 @@ export function abrirLeccion(raiz, { leccion, ejercicios, examen, alSalir, alTer
                 <button type="button" class="btn derecha" data-revisar>Comprobar</button>
             </div>
             <div class="salida"></div>`;
-        const editor = crearEditor({ valor: ej.inicial || '', alCorrer: () => probar(), tablas: NOMBRES_TABLAS });
+        const editor = crearEditor({ valor: ej.inicial || '', alCorrer: () => probar(), tablas: NOMBRES_TABLAS, esquema: ESQUEMA });
         tarjeta.querySelector('.zona-editor').appendChild(editor.nodo);
         editor.enfocar();
         const salida = tarjeta.querySelector('.salida');

@@ -727,3 +727,6 @@ td.cambio del { color: var(--tinta-3); font-weight: 400; margin-right: 6px; }
 }
 :root[data-tema="oscuro"] .dato b, :root[data-tema="oscuro"] .final-datos b { color: var(--rotulo); }
 @media (prefers-color-scheme: dark) { :root:not([data-tema="claro"]) .dato b, :root:not([data-tema="claro"]) .final-datos b { color: var(--rotulo); } }
+.teclas button.col { border-style: dashed; color: var(--pared); }
+:root[data-tema="oscuro"] .teclas button.col { color: var(--rotulo); }
+@media (prefers-color-scheme: dark) { :root:not([data-tema="claro"]) .teclas button.col { color: var(--rotulo); } }

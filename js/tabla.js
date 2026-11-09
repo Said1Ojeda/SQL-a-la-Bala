@@ -1,19 +1,27 @@
 // dibuja resultados, errores y lo que cambio en una tabla
 export const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-export function valor(v) {
+export function valor(v, decimales) {
     if (v === null || v === undefined) return '<span class="nulo">NULL</span>';
-    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2);
+    if (typeof v === 'number') return Number.isInteger(v) && !decimales ? String(v) : v.toFixed(2);
     return esc(v);
+}
+
+// si una columna trae algun decimal se muestran todos con dos, asi los precios se ven parejos
+function columnasDecimales(filas, n) {
+    const r = new Array(n).fill(false);
+    filas.forEach(f => f.forEach((v, i) => { if (typeof v === 'number' && !Number.isInteger(v)) r[i] = true; }));
+    return r;
 }
 const clase = v => typeof v === 'number' ? ' class="num"' : '';
 
 export function tablaHTML(res, { titulo = '', max = 200 } = {}) {
     if (!res) return '';
     const filas = res.filas.slice(0, max);
+    const dec = columnasDecimales(res.filas, res.columnas.length);
     const cab = `<tr><th class="nfila" scope="col"><span class="oculto">Fila</span></th>${res.columnas.map(c => `<th scope="col">${esc(c || '(sin nombre)')}</th>`).join('')}</tr>`;
     const cuerpo = filas.length
-        ? filas.map((f, i) => `<tr><td class="nfila">${i + 1}</td>${f.map(v => `<td${clase(v)}>${valor(v)}</td>`).join('')}</tr>`).join('')
+        ? filas.map((f, i) => `<tr><td class="nfila">${i + 1}</td>${f.map((v, k) => `<td${clase(v)}>${valor(v, dec[k])}</td>`).join('')}</tr>`).join('')
         : `<tr><td class="nfila"></td><td colspan="${res.columnas.length || 1}" style="color:var(--tinta-3)">Sin filas</td></tr>`;
     const n = res.filas.length;
     return `<div class="resultado">
@@ -35,10 +43,11 @@ export function diffHTML(tabla, d) {
     // si cambio mucho se ensenan solo las tocadas y unas cuantas de contexto
     const lista = d.filas.length > 24 ? tocadas.slice(0, 40) : d.filas;
     const cab = `<tr>${d.columnas.map(c => `<th scope="col">${esc(c)}</th>`).join('')}</tr>`;
+    const dec = columnasDecimales(d.filas.flatMap(f => f.vieja ? [f.fila, f.vieja] : [f.fila]), d.columnas.length);
     const cuerpo = lista.map(f => {
         const celdas = f.fila.map((v, i) => {
-            if (f.estado === 'cambio' && f.cambios[i]) return `<td class="cambio"><del>${valor(f.vieja[i])}</del>${valor(v)}</td>`;
-            return `<td${clase(v)}>${valor(v)}</td>`;
+            if (f.estado === 'cambio' && f.cambios[i]) return `<td class="cambio"><del>${valor(f.vieja[i], dec[i])}</del>${valor(v, dec[i])}</td>`;
+            return `<td${clase(v)}>${valor(v, dec[i])}</td>`;
         }).join('');
         return `<tr class="${f.estado}">${celdas}</tr>`;
     }).join('');

@@ -511,15 +511,12 @@ function normValor(v) {
 export function comparar(esperado, obtenido, ordenImporta) {
     if (!obtenido) return { igual: false, motivo: 'La consulta no devolvió ninguna tabla.' };
     if (obtenido.columnas.length !== esperado.columnas.length) {
-        return { igual: false, motivo: `Salieron ${obtenido.columnas.length} columnas y se esperaban ${esperado.columnas.length}.` };
-    }
-    if (obtenido.filas.length !== esperado.filas.length) {
-        return { igual: false, motivo: `Salieron ${obtenido.filas.length} filas y se esperaban ${esperado.filas.length}.` };
+        return { igual: false, motivo: `Salieron ${obtenido.columnas.length} columnas y se esperaban ${esperado.columnas.length}.`, columnas: { esperadas: esperado.columnas, tuyas: obtenido.columnas } };
     }
     const llave = f => f.map(normValor).join('\u0002');
     const a = esperado.filas.map(llave);
     const b = obtenido.filas.map(llave);
-    if (a.join('\u0003') === b.join('\u0003')) return { igual: true };
+    if (a.length === b.length && a.join('\u0003') === b.join('\u0003')) return { igual: true };
     const as = [...a].sort().join('\u0003'), bs = [...b].sort().join('\u0003');
     if (as === bs) {
         if (ordenImporta) return { igual: false, motivo: 'Los datos están bien pero el orden no. Revisa el ORDER BY.' };
@@ -527,10 +524,30 @@ export function comparar(esperado, obtenido, ordenImporta) {
     }
     // si las columnas vienen en otro orden tambien vale
     const t = f => f.map(normValor).sort().join('\u0002');
-    if ([...esperado.filas.map(t)].sort().join('\u0003') === [...obtenido.filas.map(t)].sort().join('\u0003')) {
-        return { igual: true };
-    }
-    return { igual: false, motivo: 'La cantidad de filas cuadra, pero algunos datos no son los que se pedían.' };
+    const at = esperado.filas.map(t), bt = obtenido.filas.map(t);
+    if ([...at].sort().join('\u0003') === [...bt].sort().join('\u0003')) return { igual: true };
+
+    // lo que falta y lo que sobra, contando repetidos
+    const cuenta = new Map();
+    at.forEach(k => cuenta.set(k, (cuenta.get(k) || 0) + 1));
+    const sobran = [];
+    obtenido.filas.forEach((f, i) => {
+        const n = cuenta.get(bt[i]) || 0;
+        if (n > 0) cuenta.set(bt[i], n - 1);
+        else sobran.push(f);
+    });
+    const faltan = [];
+    const usadas = new Map();
+    bt.forEach(k => usadas.set(k, (usadas.get(k) || 0) + 1));
+    esperado.filas.forEach((f, i) => {
+        const n = usadas.get(at[i]) || 0;
+        if (n > 0) usadas.set(at[i], n - 1);
+        else faltan.push(f);
+    });
+    const motivo = obtenido.filas.length !== esperado.filas.length
+        ? `Salieron ${obtenido.filas.length} filas y se esperaban ${esperado.filas.length}.`
+        : 'La cantidad de filas cuadra, pero algunos datos no son los que se pedían.';
+    return { igual: false, motivo, faltan: { columnas: esperado.columnas, filas: faltan }, sobran: { columnas: obtenido.columnas, filas: sobran } };
 }
 
 // datos del primer JOIN para dibujarlo

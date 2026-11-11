@@ -39,7 +39,7 @@ Los `INSERT`, `UPDATE`, `DELETE` y los `JOIN` se olvidan si no se usan seguido, 
 
 Es HTML, CSS y JavaScript sin frameworks, así que se publica tal cual en GitHub Pages.
 
-El motor es [sql.js](https://github.com/sql-js/sql.js), que es SQLite compilado para el navegador. Encima tiene una capa que traduce lo más común de SQL Server para que se escriba igual que en el trabajo:
+El motor es [sql.js](https://said1ojeda.github.io/SQL-a-la-Bala/), que es SQLite compilado para el navegador. Encima tiene una capa que traduce lo más común de SQL Server para que se escriba igual que en el trabajo:
 
 | SQL Server | Cómo lo resuelve |
 |---|---|

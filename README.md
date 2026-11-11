@@ -2,7 +2,7 @@
 
 Una app para aprender SQL Server con lecciones cortas, retos y repaso, como las apps de idiomas. Todo se practica con los datos de la tienda de don Chepe, y cada consulta corre de verdad en el navegador.
 
-**Pruébala:** https://said1ojeda.github.io/sql-a-la-bala/
+**Pruébala:** https://said1ojeda.github.io/SQL-a-la-Bala/
 
 ![Ruta de lecciones](docs/inicio.png)
 

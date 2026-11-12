@@ -231,7 +231,8 @@ function vistaLab(sqlInicial) {
                 <div class="acciones">
                     <button type="button" class="btn" data-ejecutar><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>Ejecutar</button>
                     <span class="ayuda-teclas">Ctrl + Enter</span>
-                    <button type="button" class="btn suave chico derecha" data-acomodar title="Pone cada parte en su renglón y las palabras clave en mayúsculas">Acomodar</button>
+                    <button type="button" class="btn suave chico derecha" data-compartir title="Copia un enlace que abre el laboratorio con esta consulta">Copiar enlace</button>
+                    <button type="button" class="btn suave chico" data-acomodar title="Pone cada parte en su renglón y las palabras clave en mayúsculas">Acomodar</button>
                 </div>
                 <div class="aviso"></div>
                 <div class="pestanas" role="tablist">
@@ -288,6 +289,14 @@ function vistaLab(sqlInicial) {
     });
 
     raiz.querySelector('[data-ejecutar]').addEventListener('click', ejecutarLab);
+    raiz.querySelector('[data-compartir]').addEventListener('click', async () => {
+        const url = location.origin + location.pathname + '#/laboratorio?sql=' + encodeURIComponent(editor.valor);
+        let ok = false;
+        try { await navigator.clipboard.writeText(url); ok = true; } catch (e) { }
+        aviso.innerHTML = ok
+            ? '<div class="aviso-seguro" role="status"><h3>Enlace copiado</h3><p>Quien lo abra ve el laboratorio con esta misma consulta, listo para correrla.</p></div>'
+            : `<div class="aviso-seguro" role="status"><h3>Copia este enlace</h3><p style="word-break:break-all"><code>${esc(url)}</code></p></div>`;
+    });
     raiz.querySelector('[data-acomodar]').addEventListener('click', () => { editor.valor = formatear(editor.valor); guardado('bala.lab', editor.valor); editor.enfocar(); });
     raiz.querySelector('.pestanas').addEventListener('click', ev => {
         const b = ev.target.closest('[data-pes]');
@@ -393,8 +402,10 @@ function vistaChuleta() {
 }
 
 function ruta() {
-    const h = location.hash.replace(/^#\/?/, '');
+    const [h, consulta] = location.hash.replace(/^#\/?/, '').split('?');
     const [vista, id] = h.split('/');
+    // un enlace compartido trae la consulta en el sql
+    const compartida = new URLSearchParams(consulta || '').get('sql');
     document.querySelectorAll('.menu a').forEach(a => a.removeAttribute('aria-current'));
     const activo = document.querySelector(`.menu a[data-vista="${vista || 'inicio'}"]`);
     if (activo) activo.setAttribute('aria-current', 'page');
@@ -403,7 +414,7 @@ function ruta() {
     v.innerHTML = '';
     window.scrollTo(0, 0);
     if (vista === 'leccion') vistaLeccion(id);
-    else if (vista === 'laboratorio') vistaLab();
+    else if (vista === 'laboratorio') vistaLab(compartida || undefined);
     else if (vista === 'chuleta') vistaChuleta();
     else if (vista === 'repaso') vistaRepaso();
     else if (vista === 'examen') vistaExamen();

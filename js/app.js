@@ -2,7 +2,7 @@
 import { iniciar, nuevaBase, lotesDe, tablaObjetivo, tieneWhere, consultar } from './motor.js';
 import { LECCIONES, UNIDADES, PRUEBAME } from './lecciones.js';
 import { TABLAS } from './datos.js';
-import { crearEditor, resaltar } from './editor.js';
+import { crearEditor, resaltar, formatear } from './editor.js';
 import { abrirLeccion, correrConFoto, salidaHTML } from './leccion.js';
 import { dibujarJoin, dibujarOrden } from './visual.js';
 import { esc } from './tabla.js';
@@ -231,6 +231,7 @@ function vistaLab(sqlInicial) {
                 <div class="acciones">
                     <button type="button" class="btn" data-ejecutar><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>Ejecutar</button>
                     <span class="ayuda-teclas">Ctrl + Enter</span>
+                    <button type="button" class="btn suave chico derecha" data-acomodar title="Pone cada parte en su renglón y las palabras clave en mayúsculas">Acomodar</button>
                 </div>
                 <div class="aviso"></div>
                 <div class="pestanas" role="tablist">
@@ -287,6 +288,7 @@ function vistaLab(sqlInicial) {
     });
 
     raiz.querySelector('[data-ejecutar]').addEventListener('click', ejecutarLab);
+    raiz.querySelector('[data-acomodar]').addEventListener('click', () => { editor.valor = formatear(editor.valor); guardado('bala.lab', editor.valor); editor.enfocar(); });
     raiz.querySelector('.pestanas').addEventListener('click', ev => {
         const b = ev.target.closest('[data-pes]');
         if (!b) return;

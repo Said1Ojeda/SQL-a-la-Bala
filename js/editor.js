@@ -112,3 +112,92 @@ export function crearEditor({ valor = '', alCorrer, teclas = true, tablas = [], 
         meter
     };
 }
+
+const CLAUSULAS = /^(FROM|WHERE|GROUP BY|HAVING|ORDER BY|SET|VALUES|UNION ALL|UNION|(?:INNER|LEFT|RIGHT|FULL|CROSS)(?: OUTER)? JOIN|JOIN)$/;
+const PEGADAS = ['GROUP BY', 'ORDER BY', 'UNION ALL', 'LEFT OUTER JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN', 'CROSS JOIN', 'BEGIN TRAN', 'IS NOT NULL', 'IS NULL', 'NOT IN'];
+
+// acomoda la consulta como se escribe en el trabajo, cada parte en su renglon
+export function formatear(sql) {
+    const mayus = t => t.replace(RE_CLAVE, m => m.toUpperCase()).replace(RE_FUNC, m => m.toUpperCase());
+    // con comentarios solo se ponen mayusculas, moverlos de renglon los puede romper
+    if (/--|\/\*/.test(sql)) return conTextos(sql, mayus);
+
+    const textos = [];
+    let s = sql.replace(/N?'(?:[^']|'')*'|"[^"]*"/g, m => { textos.push(m); return '\u0001' + (textos.length - 1) + '\u0001'; });
+    const sentencias = [];
+    let prof = 0, act = '';
+    for (const c of s) {
+        if (c === '(') prof++;
+        if (c === ')') prof--;
+        if (c === ';' && prof === 0) { sentencias.push(act); act = ''; continue; }
+        act += c;
+    }
+    if (act.trim()) sentencias.push(act);
+
+    const salida = sentencias.map(x => acomodar(mayus(x.replace(/\s+/g, ' ').trim()))).filter(Boolean);
+    let r = salida.join(';\n\n') + (salida.length ? ';' : '');
+    return r.replace(/\u0001(\d+)\u0001/g, (_, n) => textos[+n]);
+}
+
+function conTextos(sql, fn) {
+    const re = /(--[^\n]*|\/\*[\s\S]*?\*\/|N?'(?:[^']|'')*')/g;
+    let r = '', ultimo = 0, m;
+    while ((m = re.exec(sql))) { r += fn(sql.slice(ultimo, m.index)) + m[0]; ultimo = m.index + m[0].length; }
+    return r + fn(sql.slice(ultimo));
+}
+
+function acomodar(t) {
+    if (!t) return '';
+    // se parte en palabras y simbolos, cuidando los parentesis
+    const piezas = t.match(/\u0001\d+\u0001|[A-Za-z_][\w.]*|\[[^\]]*\]|\d+(?:\.\d+)?|<>|<=|>=|!=|\S/g) || [];
+    let out = '', prof = 0, clausula = '', i = 0;
+    const sangria = '    ';
+    while (i < piezas.length) {
+        // palabras que van juntas como GROUP BY o LEFT JOIN
+        let p = piezas[i], salto = 1;
+        for (const k of PEGADAS) {
+            const ks = k.split(' ');
+            if (ks.every((w, j) => (piezas[i + j] || '').toUpperCase() === w)) { p = k; salto = ks.length; break; }
+        }
+        const P = p.toUpperCase();
+        if (prof === 0 && CLAUSULAS.test(P) && out && !(P === 'FROM' && /^DELETE\s*$/i.test(out.trim()))) {
+            out = out.replace(/\s+$/, '') + '\n' + P;
+            clausula = P;
+        } else if (prof === 0 && (P === 'AND' || P === 'OR') && /^(WHERE|HAVING)$/.test(clausula) || prof === 0 && (P === 'AND') && /JOIN$/.test(clausula)) {
+            out = out.replace(/\s+$/, '') + '\n' + sangria + P;
+        } else if (prof === 0 && P === 'ON' && /JOIN$/.test(clausula)) {
+            out = out.replace(/\s+$/, '') + ' ON';
+        } else if (p === ',') {
+            out = out.replace(/\s+$/, '') + ',';
+            if (prof === 0 && clausula === 'SELECT') out += '\n' + '       ';
+            else out += ' ';
+            i += salto;
+            continue;
+        } else if (p === '(') {
+            // pegado a la funcion, separado de IN o VALUES
+            const antes = out.replace(/\s+$/, '');
+            const pegar = /[\w\]]$/.test(antes) && !/\b(IN|VALUES|EXISTS|AND|OR|ON|AS|WHERE|SELECT|FROM|JOIN|THEN|ELSE|WHEN)$/i.test(antes) && !/\u0001$/.test(antes) && !/\b(INTO|TABLE)\s+[\w\[\]]+$/i.test(antes);
+            out = pegar ? antes + '(' : (antes ? antes + ' (' : '(');
+            prof++;
+            i += salto;
+            continue;
+        } else if (p === ')') {
+            out = out.replace(/\s+$/, '') + ')';
+            prof = Math.max(0, prof - 1);
+            i += salto;
+            continue;
+        } else if (p === '.') {
+            out = out.replace(/\s+$/, '') + '.';
+            i += salto;
+            continue;
+        } else {
+            if (out && !/[\s(.]$/.test(out)) out += ' ';
+            out += P === p.toUpperCase() && /^[A-Z ]+$/.test(P) && CLAVE_SET.has(P.split(' ')[0]) ? P : p;
+            if (P === 'SELECT' && prof === 0) clausula = 'SELECT';
+        }
+        if (!/[\s]$/.test(out)) out += ' ';
+        i += salto;
+    }
+    return out.replace(/[ \t]+\n/g, '\n').replace(/[ \t]+$/g, '').replace(/ \)/g, ')');
+}
+const CLAVE_SET = new Set(CLAVES);

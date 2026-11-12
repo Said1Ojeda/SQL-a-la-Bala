@@ -200,6 +200,8 @@ function porComasCrudo(t) {
 
 function traducir(lote) {
     let s = lote;
+    // en SQL Server las comillas dobles son nombres, no textos, SQLite los dejaria pasar como texto
+    s = s.replace(/"([^"]*)"/g, '[$1]');
     s = s.replace(/\bWITH\s*\(\s*NOLOCK\s*\)/gi, '');
     s = s.replace(/^SET\s+IDENTITY_INSERT\b.*$/gim, '');
     s = s.replace(/\bBEGIN\s+TRAN(SACTION)?\b(\s+\w+)?/gi, 'BEGIN TRANSACTION');

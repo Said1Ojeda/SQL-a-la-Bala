@@ -1,6 +1,6 @@
 // corre una leccion o un repaso, ejercicio por ejercicio
 import { nuevaBase, ejecutar, consultar, comparar, lotesDe, tablaObjetivo, foto, diferencias, infoJoin, partes } from './motor.js';
-import { crearEditor, resaltar } from './editor.js';
+import { crearEditor, resaltar, formatear } from './editor.js';
 import { tablaHTML, diffHTML, errorHTML, mensajesHTML, esc } from './tabla.js';
 import { dibujarJoin, dibujarOrden } from './visual.js';
 import { TABLAS } from './datos.js';
@@ -280,6 +280,7 @@ export function abrirLeccion(raiz, { leccion, ejercicios, examen, alSalir, alTer
             <div class="pista" hidden></div>
             <div class="acciones">
                 <button type="button" class="btn suave chico" data-correr>Probar</button>
+                <button type="button" class="btn suave chico" data-acomodar>Acomodar</button>
                 ${ej.pista && !examen ? '<button type="button" class="btn suave chico" data-pista>Una pista</button>' : ''}
                 <button type="button" class="btn derecha" data-revisar>Comprobar</button>
             </div>
@@ -295,6 +296,7 @@ export function abrirLeccion(raiz, { leccion, ejercicios, examen, alSalir, alTer
             conectarExtras(salida, editor.valor);
         }
         tarjeta.querySelector('[data-correr]').addEventListener('click', probar);
+        tarjeta.querySelector('[data-acomodar]').addEventListener('click', () => { editor.valor = formatear(editor.valor); editor.enfocar(); });
         const bp = tarjeta.querySelector('[data-pista]');
         if (bp) bp.addEventListener('click', () => {
             const p = tarjeta.querySelector('.pista');

@@ -39,23 +39,24 @@ Los `INSERT`, `UPDATE`, `DELETE` y los `JOIN` se olvidan si no se usan seguido, 
 
 Es HTML, CSS y JavaScript sin frameworks, así que se publica tal cual en GitHub Pages.
 
-El motor es [sql.js](https://said1ojeda.github.io/SQL-a-la-Bala/), que es SQLite compilado para el navegador. Encima tiene una capa que traduce lo más común de SQL Server para que se escriba igual que en el trabajo:
+El motor es [sql.js](https://github.com/sql-js/sql.js), que es SQLite compilado para el navegador. Encima tiene una capa que traduce lo más común de SQL Server para que se escriba igual que en el trabajo:
 
 | SQL Server | Cómo lo resuelve |
 |---|---|
 | `UPDATE p SET ... FROM productos p JOIN ...` y `DELETE d FROM ... JOIN ...` | se reescriben para SQLite con el mismo resultado |
-| `TOP 5`, `OFFSET ... FETCH` | se vuelve `LIMIT`, también dentro de subconsultas |
+| `TOP 5`, `TOP 10 PERCENT`, `TOP 3 WITH TIES`, `OFFSET ... FETCH` | se vuelve `LIMIT`, también dentro de subconsultas. PERCENT redondea para arriba y WITH TIES trae las que empatan con la última |
 | `GETDATE()`, `DATEDIFF`, `DATEADD`, `DATEPART`, `YEAR`, `MONTH`, `DAY` | funciones propias con las mismas reglas, el 31 más un mes cae en el último día del mes |
 | `CONVERT(VARCHAR, fecha, 103)` | estilos 101, 103, 23, 108 y 120 |
 | `ISNULL`, `LEN`, `LEFT`, `RIGHT`, `CHARINDEX` | equivalentes de SQLite o funciones propias |
 | `'texto' + 'texto'` | se une igual que en SQL Server |
 | `BEGIN TRAN`, `COMMIT`, `ROLLBACK`, `@@ROWCOUNT`, `SCOPE_IDENTITY()` | transacciones de verdad |
+| `SELECT * INTO respaldo FROM ...` y tablas `#temporales` | crea la tabla con lo que trae la consulta, como el respaldo de antes de un `DELETE` |
 | `INT IDENTITY(1,1)`, `NVARCHAR(50)` | autoincremento y textos sin distinguir mayúsculas, como el collation por defecto |
 | Columnas fuera del `GROUP BY` | da el error 8120 como SQL Server, aunque SQLite sí lo dejaría pasar |
 | Agrupar por un alias del `SELECT` | da error como en SQL Server y explica por qué |
 | Instrucciones sin punto y coma | se separan por renglón, como en SSMS |
 
-Los errores salen explicados en español y con el número que tendrían en SQL Server, por ejemplo 207, 208, 547 y 8120.
+Los errores salen explicados en español y con el número que tendrían en SQL Server, por ejemplo 207, 208, 547, 2714 y 8120.
 
 | Archivo | Qué hace |
 |---|---|

@@ -135,7 +135,12 @@ export function dibujarOrden(caja, sql, db) {
     if (p.having) pasos.push({ clave: 'HAVING', sql: `SELECT ${p.groupBy}, COUNT(*) AS [filas en el grupo]\n${base}${w}${g}${h}`, txt: (n, a) => `HAVING descarta grupos completos. De ${a} grupos quedan ${n}.` });
     pasos.push({ clave: 'SELECT', sql: `${sel}${base}${w}${g}${h}`, txt: () => `Hasta aquí escoge las columnas del SELECT${p.distinct ? ' y DISTINCT quita las repetidas' : ''}. Por eso un alias que pones en el SELECT no se puede usar en el WHERE, todavía no existía.` });
     if (p.orderBy) pasos.push({ clave: 'ORDER BY', sql: `${sel}${base}${w}${g}${h}\nORDER BY ${p.orderBy}`, txt: () => 'ORDER BY ordena casi al final. Como el SELECT ya pasó, aquí sí puedes usar el alias.' });
-    if (p.top !== null) pasos.push({ clave: 'TOP', sql: `SELECT TOP ${p.top} ${p.distinct ? 'DISTINCT ' : ''}${p.select}\n${base}${w}${g}${h}${p.orderBy ? `\nORDER BY ${p.orderBy}` : ''}`, txt: () => `Al final TOP ${p.top} se queda con las primeras ${p.top} filas. Por eso TOP sin ORDER BY trae cualquiera.` });
+    const top = p.top !== null ? `${p.distinct ? 'DISTINCT ' : ''}TOP ${p.top}${p.porciento ? ' PERCENT' : ''}${p.empates ? ' WITH TIES' : ''} ` : '';
+    const queHaceTop = () => {
+        const cuantas = p.porciento ? `el ${p.top} por ciento de las filas, redondeando para arriba` : `las primeras ${p.top} filas`;
+        return `Al final TOP se queda con ${cuantas}${p.empates ? ', y WITH TIES agrega las que empatan con la última' : ''}. Por eso TOP sin ORDER BY trae cualquiera.`;
+    };
+    if (p.top !== null) pasos.push({ clave: 'TOP', sql: `SELECT ${top}${p.select}\n${base}${w}${g}${h}${p.orderBy ? `\nORDER BY ${p.orderBy}` : ''}`, txt: queHaceTop });
 
     const resultados = pasos.map(x => {
         const r = ejecutar(db, x.sql);
@@ -156,7 +161,7 @@ export function dibujarOrden(caja, sql, db) {
     const detalle = caja.querySelector('.orden-detalle');
     const consultaMarcada = clave => {
         const lineas = [];
-        lineas.push(['SELECT', `SELECT ${p.top !== null ? `TOP ${p.top} ` : ''}${p.distinct ? 'DISTINCT ' : ''}${p.select}`]);
+        lineas.push(['SELECT', `SELECT ${top || (p.distinct ? 'DISTINCT ' : '')}${p.select}`]);
         lineas.push(['FROM', `FROM ${p.from}`]);
         if (p.where) lineas.push(['WHERE', `WHERE ${p.where}`]);
         if (p.groupBy) lineas.push(['GROUP BY', `GROUP BY ${p.groupBy}`]);

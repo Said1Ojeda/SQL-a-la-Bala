@@ -26,9 +26,9 @@ export const CHULETA = [
     },
     {
         titulo: 'DELETE',
-        texto: '<p>Sin WHERE se va todo. Si da el error 547 es porque otra tabla depende de esa fila.</p>',
-        sql: "-- 1. revisar\nSELECT * FROM clientes WHERE id = 7;\n\n-- 2. borrar\nDELETE FROM clientes\nWHERE id = 7;\n\n-- muchas veces es mejor desactivar\nUPDATE usuarios SET activo = 0 WHERE id = 7;",
-        probar: 'SELECT * FROM clientes WHERE id = 7;\n\nDELETE FROM clientes\nWHERE id = 7;'
+        texto: '<p>Sin WHERE se va todo. Si da el error 547 es porque otra tabla depende de esa fila. Antes de borrar en serio saca un respaldo con SELECT INTO.</p>',
+        sql: "-- 1. revisar\nSELECT * FROM clientes WHERE id = 7;\n\n-- 2. respaldo, crea la tabla nueva\nSELECT * INTO clientes_respaldo\nFROM clientes WHERE id = 7;\n\n-- 3. borrar\nDELETE FROM clientes\nWHERE id = 7;\n\n-- con # es temporal, se va al cerrar\nSELECT * INTO #borrados FROM clientes WHERE id = 7;\n\n-- muchas veces es mejor desactivar\nUPDATE usuarios SET activo = 0 WHERE id = 7;",
+        probar: 'SELECT * INTO clientes_respaldo\nFROM clientes WHERE id = 7;\n\nDELETE FROM clientes\nWHERE id = 7;\n\nSELECT * FROM clientes_respaldo;'
     },
     {
         titulo: 'La transacción segura',

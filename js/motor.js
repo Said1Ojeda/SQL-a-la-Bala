@@ -138,6 +138,37 @@ function reescribirConvert(s) {
     return s;
 }
 
+// busca el INTO de un SELECT INTO en el nivel de afuera
+function buscarInto(s) {
+    if (!/^\s*SELECT\b/i.test(s)) return null;
+    let prof = 0;
+    for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (c === '(') prof++;
+        else if (c === ')') prof--;
+        else if (prof === 0 && /\w/.test(c) && !/\w/.test(s[i - 1] || '')) {
+            const resto = s.slice(i);
+            if (/^FROM\b/i.test(resto)) return null;
+            const m = /^INTO\s+([#\w\[\]\.]+)\s*/i.exec(resto);
+            if (m) return { i, fin: i + m[0].length, tabla: m[1] };
+        }
+    }
+    return null;
+}
+
+// SELECT ... INTO nueva FROM ... crea la tabla con lo que trae la consulta
+function selectInto(s) {
+    const h = buscarInto(s);
+    if (!h) return s;
+    const temporal = /^\[?#/.test(h.tabla) ? 'TEMP ' : '';
+    return `CREATE ${temporal}TABLE ${h.tabla} AS ` + s.slice(0, h.i).replace(/\s+$/, ' ') + s.slice(h.fin);
+}
+
+export function intoDe(lote) {
+    const h = buscarInto(proteger(lote).s);
+    return h ? limpiaNombre(h.tabla) : null;
+}
+
 // tablas con alias de un FROM con JOIN, mas las condiciones de cada ON
 function piezasFrom(from) {
     const trozos = from.split(/\b(?:INNER\s+)?JOIN\b/i);
@@ -203,6 +234,9 @@ function traducir(lote) {
     // en SQL Server las comillas dobles son nombres, no textos, SQLite los dejaria pasar como texto
     s = s.replace(/"([^"]*)"/g, '[$1]');
     s = s.replace(/\bWITH\s*\(\s*NOLOCK\s*\)/gi, '');
+    // las tablas con # son temporales, en SQLite el nombre va entre corchetes
+    s = s.replace(/(^|[^\w\[#])(##?\w+)/g, '$1[$2]');
+    s = selectInto(s);
     s = s.replace(/^SET\s+IDENTITY_INSERT\b.*$/gim, '');
     s = s.replace(/\bBEGIN\s+TRAN(SACTION)?\b(\s+\w+)?/gi, 'BEGIN TRANSACTION');
     s = s.replace(/\bCOMMIT\s+TRAN(SACTION)?\b(\s+\w+)?/gi, 'COMMIT');
@@ -230,7 +264,8 @@ function traducir(lote) {
     // un default con funcion en SQLite necesita parentesis
     s = s.replace(/\bDEFAULT\s+(datetime\('now','localtime'\))/gi, 'DEFAULT ($1)');
 
-    if (/^\s*CREATE\s+TABLE\b/i.test(s)) {
+    s = s.replace(/^\s*CREATE\s+TABLE\s+(\[#)/i, 'CREATE TEMP TABLE $1');
+    if (/^\s*CREATE\s+(TEMP\s+)?TABLE\b/i.test(s)) {
         s = s.replace(/\bINT\s+IDENTITY\s*\(\s*\d+\s*,\s*\d+\s*\)\s+PRIMARY\s+KEY\b/gi, 'INTEGER PRIMARY KEY AUTOINCREMENT');
         s = s.replace(/\bIDENTITY\s*\(\s*\d+\s*,\s*\d+\s*\)/gi, '');
         // SQL Server por defecto no distingue mayusculas, asi se parece
@@ -362,6 +397,7 @@ export function explicarError(msg) {
     if (/FOREIGN KEY constraint failed/i.test(msg)) return 'No se puede. Hay otros registros que dependen de este por una llave foránea, o el valor que pusiste no existe en la otra tabla. En SQL Server es el error 547.';
     if ((m = /NOT NULL constraint failed: (\S+)/i.exec(msg))) return `La columna ${m[1].split('.').pop()} no acepta vacíos, tienes que mandarle un valor. En SQL Server es el error 515.`;
     if (/UNIQUE constraint failed|PRIMARY KEY/i.test(msg)) return 'Ese valor ya existe y la llave no deja repetirlo. En SQL Server es el error 2627.';
+    if ((m = /table (\S+) already exists/i.exec(msg))) return `Ya existe una tabla que se llama ${m[1].replace(/["\[\]]/g, '')}. Para hacer otro respaldo ponle otro nombre o bórrala antes con DROP TABLE. En SQL Server es el error 2714.`;
     if (/misuse of aggregate/i.test(msg)) return 'No puedes usar COUNT, SUM o AVG dentro del WHERE. Para filtrar grupos ya contados se usa HAVING.';
     if (/GROUP BY clause is required before HAVING|HAVING clause on a non-aggregate/i.test(msg)) return 'HAVING filtra grupos, entonces necesita un GROUP BY antes.';
     if (/incomplete input/i.test(msg)) return 'La consulta quedó incompleta. Revisa que no falte cerrar un paréntesis o una comilla.';
@@ -406,6 +442,7 @@ export function partes(sql) {
     let m;
     if ((m = /^DISTINCT\b\s*/i.exec(sel))) { out.distinct = true; sel = sel.slice(m[0].length); }
     if ((m = /^TOP\s*\(?\s*(\d+)\s*\)?\s*/i.exec(sel))) { out.top = +m[1]; sel = sel.slice(m[0].length); }
+    if ((m = /\s+INTO\s+([#\w\[\]\.]+)\s*$/i.exec(sel))) { out.into = limpiaNombre(m[1]); sel = sel.slice(0, m.index); }
     out.select = sel;
     return out;
 }
@@ -489,7 +526,7 @@ const tipoDe = l => (/^\s*(\w+)/.exec(l) || [, ''])[1].toUpperCase();
 export function tablaObjetivo(lote) {
     const { s } = proteger(lote);
     let m;
-    if ((m = /^\s*INSERT\s+(?:INTO\s+)?([\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
+    if ((m = /^\s*INSERT\s+(?:INTO\s+)?([#\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
     // con JOIN lo que va despues del UPDATE o del DELETE puede ser el alias
     const resolver = (nombre, from) => {
         const piezas = from ? piezasFrom(from.split(/\bWHERE\b/i)[0]) : null;
@@ -497,11 +534,11 @@ export function tablaObjetivo(lote) {
         const p = piezas && piezas.find(x => x.alias.toLowerCase() === n || x.tabla.toLowerCase() === n);
         return p ? p.tabla : limpiaNombre(nombre);
     };
-    if ((m = /^\s*UPDATE\s+([\w\[\]\.]+)[\s\S]*?\bFROM\s+([\s\S]+)$/i.exec(s))) return resolver(m[1], m[2]);
-    if ((m = /^\s*UPDATE\s+([\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
-    if ((m = /^\s*DELETE\s+(?!FROM\b)([\w\[\]\.]+)\s+FROM\s+([\s\S]+)$/i.exec(s))) return resolver(m[1], m[2]);
-    if ((m = /^\s*DELETE\s+(?:FROM\s+)?([\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
-    if ((m = /^\s*TRUNCATE\s+TABLE\s+([\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
+    if ((m = /^\s*UPDATE\s+([#\w\[\]\.]+)[\s\S]*?\bFROM\s+([\s\S]+)$/i.exec(s))) return resolver(m[1], m[2]);
+    if ((m = /^\s*UPDATE\s+([#\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
+    if ((m = /^\s*DELETE\s+(?!FROM\b)([#\w\[\]\.]+)\s+FROM\s+([\s\S]+)$/i.exec(s))) return resolver(m[1], m[2]);
+    if ((m = /^\s*DELETE\s+(?:FROM\s+)?([#\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
+    if ((m = /^\s*TRUNCATE\s+TABLE\s+([#\w\[\]\.]+)/i.exec(s))) return limpiaNombre(m[1]);
     return null;
 }
 const limpiaNombre = n => n.replace(/[\[\]]/g, '').replace(/^dbo\./i, '');
@@ -532,10 +569,13 @@ export function ejecutar(db, sql) {
         if (!traducido.trim()) continue;
         try {
             const res = db.exec(traducido);
-            const afectadas = ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'].includes(tipo) ? db.getRowsModified() : null;
+            const nueva = tipo === 'SELECT' ? intoDe(original) : null;
+            let afectadas = ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'].includes(tipo) ? db.getRowsModified() : null;
+            if (nueva) afectadas = db.exec(`SELECT COUNT(*) FROM [${nueva}]`)[0].values[0][0];
             salida.lotes.push({ tipo, sql: original, afectadas, tabla: tablaObjetivo(original) });
             for (const r of res) salida.resultados.push({ columnas: r.columns, filas: r.values, sql: original });
-            if (afectadas !== null) salida.mensajes.push(`(${afectadas} ${afectadas === 1 ? 'fila afectada' : 'filas afectadas'})`);
+            if (nueva) salida.mensajes.push(`Tabla ${nueva} creada. (${afectadas} ${afectadas === 1 ? 'fila afectada' : 'filas afectadas'})`);
+            else if (afectadas !== null) salida.mensajes.push(`(${afectadas} ${afectadas === 1 ? 'fila afectada' : 'filas afectadas'})`);
             else if (tipo === 'SELECT' && !res.length) {
                 salida.resultados.push({ columnas: columnasVacias(db, traducido), filas: [], sql: original });
                 salida.mensajes.push('(0 filas)');
@@ -571,9 +611,9 @@ export function consultar(db, sql) {
 // foto de una tabla con el rowid para ver que cambio despues
 export function foto(db, tabla) {
     try {
-        const r = db.exec(`SELECT rowid AS __r, * FROM ${tabla}`);
+        const r = db.exec(`SELECT rowid AS __r, * FROM [${tabla}]`);
         if (!r.length) {
-            const st = db.prepare(`SELECT * FROM ${tabla}`);
+            const st = db.prepare(`SELECT * FROM [${tabla}]`);
             const cols = st.getColumnNames();
             st.free();
             return { columnas: cols, filas: [], ids: [] };

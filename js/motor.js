@@ -88,10 +88,10 @@ function dividir(protegido) {
 
 // mete LIMIT donde termina el select que tenia TOP, sirve tambien dentro de subconsultas
 function quitarTop(s) {
-    const re = /\bSELECT(\s+DISTINCT)?\s+TOP\s*\(?\s*(\d+)\s*\)?(\s+PERCENT)?/gi;
+    const re = /\bSELECT(\s+DISTINCT)?\s+TOP\s*\(?\s*(\d+)(?:\s*\))?(\s+PERCENT)?(\s+WITH\s+TIES)?/gi;
     const hallazgos = [];
     let m;
-    while ((m = re.exec(s))) hallazgos.push({ i: m.index, largo: m[0].length, n: m[2], distinct: !!m[1] });
+    while ((m = re.exec(s))) hallazgos.push({ i: m.index, largo: m[0].length, n: m[2], distinct: !!m[1], porciento: !!m[3], empates: !!m[4] });
     for (let k = hallazgos.length - 1; k >= 0; k--) {
         const h = hallazgos[k];
         let prof = 0;
@@ -103,11 +103,55 @@ function quitarTop(s) {
                 prof--;
             }
         }
-        const cola = s.slice(h.i + h.largo, fin);
+        const cola = s.slice(h.i + h.largo, fin).replace(/\s+$/, '');
         if (/\bLIMIT\b/i.test(cola)) continue;
-        s = s.slice(0, h.i) + 'SELECT ' + (h.distinct ? 'DISTINCT ' : '') + cola.replace(/\s+$/, '') + ' LIMIT ' + h.n + (fin < s.length ? ' ' : '') + s.slice(fin);
+        const sel = 'SELECT ' + (h.distinct ? 'DISTINCT ' : '');
+        // con PERCENT SQL Server redondea para arriba
+        let n = h.porciento ? `(SELECT (COUNT(*) * ${h.n} + 99) / 100 FROM (${sel}${cola}))` : h.n;
+        if (h.empates) {
+            const orden = ordenDeAfuera(cola);
+            if (!orden) throw new Error('TOP WITH TIES necesita un ORDER BY, si no SQL Server no sabe cuáles empatan. Es el error 1062.');
+            // cuenta las filas que quedan dentro del puesto n, asi entran las que empatan con la ultima
+            const rango = h.distinct
+                // con DISTINCT se cuentan las filas ya sin repetir
+                ? `SELECT RANK() OVER (ORDER BY ${orden.orden.replace(/\b\w+\.(?=[\w\[])/g, '')}) AS __puesto FROM (SELECT DISTINCT ${orden.cuerpo})`
+                : `SELECT RANK() OVER (ORDER BY ${conExpresiones(orden.orden, orden.cuerpo)}) AS __puesto, ${orden.cuerpo}`;
+            n = `(SELECT COUNT(*) FROM (${rango}) WHERE __puesto <= ${n})`;
+        }
+        s = s.slice(0, h.i) + sel + cola + ' LIMIT ' + n + (fin < s.length ? ' ' : '') + s.slice(fin);
     }
     return s;
+}
+
+// separa el ORDER BY del nivel de afuera de lo demas
+function ordenDeAfuera(cola) {
+    let prof = 0;
+    for (let i = 0; i < cola.length; i++) {
+        const c = cola[i];
+        if (c === '(') prof++;
+        else if (c === ')') prof--;
+        else if (prof === 0 && !/\w/.test(cola[i - 1] || '')) {
+            const m = /^ORDER\s+BY\s+/i.exec(cola.slice(i));
+            if (m) return { cuerpo: cola.slice(0, i).trim(), orden: cola.slice(i + m[0].length).trim() };
+        }
+    }
+    return null;
+}
+
+// dentro del RANK no se puede usar el alias del SELECT ni el numero de columna, se cambian por su expresion
+function conExpresiones(orden, cuerpo) {
+    const columnas = porComasCrudo(cuerpo.split(/\bFROM\b/i)[0]).map(c => {
+        const m = /^\s*([\s\S]+?)\s+(?:AS\s+)?\[?([A-Za-z_]\w*)\]?\s*$/i.exec(c);
+        return m ? { expr: m[1].trim(), alias: m[2].toLowerCase() } : { expr: c.trim(), alias: null };
+    });
+    return porComasCrudo(orden).map(o => {
+        const m = /^\s*\[?(\w+)\]?(\s+(?:ASC|DESC))?\s*$/i.exec(o);
+        if (!m) return o.trim();
+        const sentido = m[2] || '';
+        if (/^\d+$/.test(m[1]) && columnas[+m[1] - 1]) return columnas[+m[1] - 1].expr + sentido;
+        const col = columnas.find(c => c.alias === m[1].toLowerCase());
+        return col ? col.expr + sentido : o.trim();
+    }).join(', ');
 }
 
 // CONVERT puede traer 2 o 3 argumentos y sql.js no deja funciones con argumentos variables
@@ -441,7 +485,12 @@ export function partes(sql) {
     const out = { distinct: false, top: null, select: '', from: p.FROM || '', where: p.WHERE || '', groupBy: p['GROUP BY'] || '', having: p.HAVING || '', orderBy: p['ORDER BY'] || '' };
     let m;
     if ((m = /^DISTINCT\b\s*/i.exec(sel))) { out.distinct = true; sel = sel.slice(m[0].length); }
-    if ((m = /^TOP\s*\(?\s*(\d+)\s*\)?\s*/i.exec(sel))) { out.top = +m[1]; sel = sel.slice(m[0].length); }
+    if ((m = /^TOP\s*\(?\s*(\d+)(?:\s*\))?(\s+PERCENT)?(\s+WITH\s+TIES)?\s*/i.exec(sel))) {
+        out.top = +m[1];
+        out.porciento = !!m[2];
+        out.empates = !!m[3];
+        sel = sel.slice(m[0].length);
+    }
     if ((m = /\s+INTO\s+([#\w\[\]\.]+)\s*$/i.exec(sel))) { out.into = limpiaNombre(m[1]); sel = sel.slice(0, m.index); }
     out.select = sel;
     return out;
@@ -565,7 +614,13 @@ export function ejecutar(db, sql) {
             salida.error = { texto: malAgrupado, lote: original };
             break;
         }
-        const traducido = restaurar(traducir(l), textos);
+        let traducido;
+        try {
+            traducido = restaurar(traducir(l), textos);
+        } catch (e) {
+            salida.error = { texto: e.message, lote: original };
+            break;
+        }
         if (!traducido.trim()) continue;
         try {
             const res = db.exec(traducido);

@@ -62,6 +62,12 @@ export const CHULETA = [
         probar: "SELECT nombre,\n       UPPER(nombre) AS mayusculas,\n       ISNULL(telefono, 'Sin teléfono') AS telefono,\n       CONVERT(VARCHAR(10), fecha_registro, 103) AS registro,\n       DATEDIFF(day, fecha_registro, GETDATE()) AS dias\nFROM clientes;"
     },
     {
+        titulo: 'Ver cómo es una tabla',
+        texto: '<p>Antes de un INSERT o un JOIN sirve ver las columnas, cuáles aceptan NULL y quién depende de la tabla. Es lo mismo que Alt+F1 en SSMS.</p>',
+        sql: "-- columnas, llave y llaves foráneas\nEXEC sp_help 'productos';\n\n-- todas las tablas\nEXEC sp_help;",
+        probar: "EXEC sp_help 'productos';"
+    },
+    {
         titulo: 'Errores que más salen',
         ancha: true,
         html: `<div class="marco-tabla"><table class="datos errores-tabla"><thead><tr><th>Error</th><th>Qué quiere decir</th><th>Qué hacer</th></tr></thead><tbody>

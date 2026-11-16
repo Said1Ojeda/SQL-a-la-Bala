@@ -51,7 +51,7 @@ function restaurar(s, textos) {
     return s.replace(/\u0001(\d+)\u0001/g, (_, n) => "'" + textos[+n].replace(/'/g, "''") + "'");
 }
 
-const SIEMPRE_CORTA = /^(INSERT|UPDATE|DELETE|BEGIN|COMMIT|ROLLBACK|CREATE|ALTER|DROP|PRINT|TRUNCATE|DECLARE|GO|SAVE)\b/i;
+const SIEMPRE_CORTA = /^(INSERT|UPDATE|DELETE|BEGIN|COMMIT|ROLLBACK|CREATE|ALTER|DROP|PRINT|TRUNCATE|DECLARE|GO|SAVE|EXEC|EXECUTE|SP_HELP|SP_COLUMNS)\b/i;
 
 // SQL Server deja escribir sin punto y coma, por eso se corta tambien por renglon
 function dividir(protegido) {
@@ -454,6 +454,54 @@ export function explicarError(msg) {
     return msg;
 }
 
+// EXEC sp_help tabla, para ver las columnas sin salirse del editor
+const TIPOS = new WeakMap();
+
+function guardarTipos(db, lote) {
+    const m = /^\s*CREATE\s+TABLE\s+([#\w\[\]\.]+)\s*\(([\s\S]*)\)\s*$/i.exec(lote);
+    if (!m) return;
+    if (!TIPOS.has(db)) TIPOS.set(db, {});
+    const cols = {};
+    for (const def of porComasCrudo(m[2])) {
+        const c = /^\s*\[?(\w+)\]?\s+(\w+(?:\s*\([^)]*\))?)(\s+IDENTITY\b)?/i.exec(def);
+        if (!c || /^(PRIMARY|FOREIGN|CONSTRAINT|UNIQUE|CHECK)$/i.test(c[1])) continue;
+        cols[c[1].toLowerCase()] = c[2].replace(/\s+/g, '').toLowerCase() + (c[3] ? ' identity' : '');
+    }
+    TIPOS.get(db)[limpiaNombre(m[1]).toLowerCase()] = cols;
+}
+
+function esSpHelp(lote) {
+    return /^\s*(?:EXEC(?:UTE)?\s+)?(?:dbo\.)?(sp_help|sp_columns)\b\s*(.*?)\s*$/is.exec(lote);
+}
+
+function spHelp(db, nombre) {
+    const tablas = db.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' UNION ALL SELECT name FROM sqlite_temp_master WHERE type = 'table' ORDER BY 1");
+    const lista = tablas.length ? tablas[0].values.map(v => v[0]) : [];
+    if (!nombre) return [{ columnas: ['Name', 'Owner', 'Object_type'], filas: lista.map(t => [t, 'dbo', 'user table']) }];
+    const tabla = lista.find(t => t.toLowerCase() === nombre.toLowerCase());
+    if (!tabla) throw new Error(`No existe ningún objeto que se llame ${nombre}. Revisa el nombre, las tablas son ${lista.join(', ')}. En SQL Server es el error 15009.`);
+    const tipos = (TIPOS.get(db) || {})[tabla.toLowerCase()] || {};
+    const info = db.exec(`PRAGMA table_info([${tabla}])`)[0];
+    const salida = [{
+        columnas: ['Column_name', 'Type', 'Nullable', 'Default'],
+        filas: info.values.map(([, col, tipo, noNulo, def, llave]) => [col, tipos[col.toLowerCase()] || String(tipo).toLowerCase(), noNulo || llave ? 'no' : 'yes', def === null ? null : String(def).replace(/\(?datetime\('now','localtime'\)\)?/i, '(getdate())')])
+    }];
+    const llaves = info.values.filter(v => v[5]).map(v => v[1]);
+    if (llaves.length) salida.push({ columnas: ['index_name', 'index_keys'], filas: [['PK_' + tabla, llaves.join(', ')]] });
+    const fk = [];
+    for (const otra of lista) {
+        const r = db.exec(`PRAGMA foreign_key_list([${otra}])`);
+        if (!r.length) continue;
+        for (const v of r[0].values) {
+            const [, , destino, desde, hacia] = v;
+            if (otra === tabla) fk.push([`FK_${tabla}_${destino}`, `${desde} REFERENCES ${destino} (${hacia || 'id'})`]);
+            else if (destino.toLowerCase() === tabla.toLowerCase()) fk.push([`Table is referenced by ${otra}`, `${otra}.${desde}`]);
+        }
+    }
+    if (fk.length) salida.push({ columnas: ['constraint_name', 'constraint_keys'], filas: fk });
+    return salida;
+}
+
 // separa un select en sus partes, solo en el nivel de afuera
 export function partes(sql) {
     const { s, textos } = proteger(sql);
@@ -609,6 +657,18 @@ export function ejecutar(db, sql) {
     for (const l of lotes) {
         const original = restaurar(l, textos);
         const tipo = tipoDe(l);
+        const ayuda = esSpHelp(original);
+        if (ayuda) {
+            try {
+                const nombre = ayuda[2].replace(/^N?'|'$/g, '').replace(/[\[\]]/g, '').replace(/^dbo\./i, '').trim();
+                for (const r of spHelp(db, nombre)) salida.resultados.push({ ...r, sql: original });
+                salida.lotes.push({ tipo: 'EXEC', sql: original, afectadas: null, tabla: null });
+            } catch (e) {
+                salida.error = { texto: e.message, lote: original };
+                break;
+            }
+            continue;
+        }
         const malAgrupado = revisarAgrupado(original);
         if (malAgrupado) {
             salida.error = { texto: malAgrupado, lote: original };
@@ -624,6 +684,7 @@ export function ejecutar(db, sql) {
         if (!traducido.trim()) continue;
         try {
             const res = db.exec(traducido);
+            if (tipo === 'CREATE') guardarTipos(db, original);
             const nueva = tipo === 'SELECT' ? intoDe(original) : null;
             let afectadas = ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'].includes(tipo) ? db.getRowsModified() : null;
             if (nueva) afectadas = db.exec(`SELECT COUNT(*) FROM [${nueva}]`)[0].values[0][0];

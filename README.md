@@ -49,6 +49,7 @@ El motor es [sql.js](https://github.com/sql-js/sql.js), que es SQLite compilado 
 | `CONVERT(VARCHAR, fecha, 103)` | estilos 101, 103, 23, 108 y 120 |
 | `ISNULL`, `LEN`, `LEFT`, `RIGHT`, `CHARINDEX` | equivalentes de SQLite o funciones propias |
 | `'texto' + 'texto'` | se une igual que en SQL Server |
+| `EXEC sp_help productos` | enseña las columnas, la llave y quién depende de la tabla, como Alt+F1 en SSMS |
 | `BEGIN TRAN`, `COMMIT`, `ROLLBACK`, `@@ROWCOUNT`, `SCOPE_IDENTITY()` | transacciones de verdad |
 | `SELECT * INTO respaldo FROM ...` y tablas `#temporales` | crea la tabla con lo que trae la consulta, como el respaldo de antes de un `DELETE` |
 | `INT IDENTITY(1,1)`, `NVARCHAR(50)` | autoincremento y textos sin distinguir mayúsculas, como el collation por defecto |

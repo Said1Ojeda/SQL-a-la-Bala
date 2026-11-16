@@ -357,6 +357,7 @@ function funciones(db) {
     // los de SQLite no le hacen mayuscula a las tildes
     db.create_function('UPPER', t => t === null ? null : String(t).toLocaleUpperCase('es'));
     db.create_function('LOWER', t => t === null ? null : String(t).toLocaleLowerCase('es'));
+    db.create_function('NEWID', () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2)).toUpperCase());
     db.create_function('CEILING', v => v === null ? null : Math.ceil(v));
     db.create_function('FLOOR', v => v === null ? null : Math.floor(v));
     db.create_function('DATEDIFF', (p, a, b) => {
@@ -442,6 +443,7 @@ export function explicarError(msg) {
     if ((m = /NOT NULL constraint failed: (\S+)/i.exec(msg))) return `La columna ${m[1].split('.').pop()} no acepta vacíos, tienes que mandarle un valor. En SQL Server es el error 515.`;
     if (/UNIQUE constraint failed|PRIMARY KEY/i.test(msg)) return 'Ese valor ya existe y la llave no deja repetirlo. En SQL Server es el error 2627.';
     if ((m = /table (\S+) already exists/i.exec(msg))) return `Ya existe una tabla que se llama ${m[1].replace(/["\[\]]/g, '')}. Para hacer otro respaldo ponle otro nombre o bórrala antes con DROP TABLE. En SQL Server es el error 2714.`;
+    if ((m = /no such function: (\S+)/i.exec(msg))) return `'${m[1]}' no es una función que conozca SQL Server. Revisa cómo se escribe. En SQL Server es el error 195.`;
     if (/misuse of aggregate/i.test(msg)) return 'No puedes usar COUNT, SUM o AVG dentro del WHERE. Para filtrar grupos ya contados se usa HAVING.';
     if (/GROUP BY clause is required before HAVING|HAVING clause on a non-aggregate/i.test(msg)) return 'HAVING filtra grupos, entonces necesita un GROUP BY antes.';
     if (/incomplete input/i.test(msg)) return 'La consulta quedó incompleta. Revisa que no falte cerrar un paréntesis o una comilla.';
@@ -452,6 +454,27 @@ export function explicarError(msg) {
     if (/table \S+ has (\d+) columns but (\d+) values were supplied/i.test(msg)) return 'La tabla tiene más columnas de las que mandaste. Pon la lista de columnas después del nombre de la tabla.';
     if ((m = /near "([^"]*)": syntax error/i.exec(msg))) return `Error de sintaxis cerca de "${m[1]}". Revisa comas, comillas y el orden de las partes. En SQL Server es el error 102.`;
     return msg;
+}
+
+// funciones de MySQL o SQLite que en SQL Server no existen, con la que se usa en su lugar
+const DE_OTRO_LADO = {
+    LENGTH: 'LEN(texto)', CHAR_LENGTH: 'LEN(texto)', IFNULL: 'ISNULL(columna, valor)', NVL: 'ISNULL(columna, valor)',
+    SUBSTR: 'SUBSTRING(texto, inicio, largo)', INSTR: "CHARINDEX('busca', texto)", LOCATE: "CHARINDEX('busca', texto)",
+    NOW: 'GETDATE()', CURDATE: 'CAST(GETDATE() AS DATE)', SYSDATE: 'GETDATE()', GROUP_CONCAT: "STRING_AGG(columna, ', ')",
+    DATE_FORMAT: 'CONVERT(VARCHAR(10), fecha, 103)', STRFTIME: 'CONVERT(VARCHAR(10), fecha, 103)', RANDOM: 'NEWID() o RAND()',
+    TOTAL: 'SUM(columna)', PRINTF: 'FORMAT o CONVERT'
+};
+
+function revisarFunciones(protegido) {
+    const re = /(^|[^\w.\[])([A-Za-z_]+)\s*\(/g;
+    let m;
+    while ((m = re.exec(protegido))) {
+        const f = m[2].toUpperCase();
+        // un nombre de tabla seguido de parentesis no es funcion
+        if (/\b(INTO|TABLE|REFERENCES|JOIN|FROM|UPDATE)\s*$/i.test(protegido.slice(0, m.index + m[1].length))) continue;
+        if (DE_OTRO_LADO[f]) return `'${m[2]}' no existe en SQL Server, eso es de MySQL o SQLite. Aquí se usa ${DE_OTRO_LADO[f]}. Es el error 195.`;
+    }
+    return null;
 }
 
 // EXEC sp_help tabla, para ver las columnas sin salirse del editor
@@ -668,6 +691,11 @@ export function ejecutar(db, sql) {
                 break;
             }
             continue;
+        }
+        const deOtroLado = revisarFunciones(l);
+        if (deOtroLado) {
+            salida.error = { texto: deOtroLado, lote: original };
+            break;
         }
         const malAgrupado = revisarAgrupado(original);
         if (malAgrupado) {

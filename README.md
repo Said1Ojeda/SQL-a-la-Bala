@@ -49,6 +49,8 @@ El motor es [sql.js](https://github.com/sql-js/sql.js), que es SQLite compilado 
 | `CONVERT(VARCHAR, fecha, 103)` | estilos 101, 103, 23, 108 y 120 |
 | `ISNULL`, `LEN`, `LEFT`, `RIGHT`, `CHARINDEX` | equivalentes de SQLite o funciones propias |
 | `'texto' + 'texto'` | se une igual que en SQL Server |
+| `EXEC sp_help productos` | enseña las columnas, la llave y quién depende de la tabla, como Alt+F1 en SSMS |
+| `LENGTH`, `IFNULL`, `NOW()` y otras de MySQL | da el error 195 y dice cuál se usa en SQL Server, aunque SQLite sí las aceptaría |
 | `BEGIN TRAN`, `COMMIT`, `ROLLBACK`, `@@ROWCOUNT`, `SCOPE_IDENTITY()` | transacciones de verdad |
 | `SELECT * INTO respaldo FROM ...` y tablas `#temporales` | crea la tabla con lo que trae la consulta, como el respaldo de antes de un `DELETE` |
 | `INT IDENTITY(1,1)`, `NVARCHAR(50)` | autoincremento y textos sin distinguir mayúsculas, como el collation por defecto |
@@ -56,7 +58,7 @@ El motor es [sql.js](https://github.com/sql-js/sql.js), que es SQLite compilado 
 | Agrupar por un alias del `SELECT` | da error como en SQL Server y explica por qué |
 | Instrucciones sin punto y coma | se separan por renglón, como en SSMS |
 
-Los errores salen explicados en español y con el número que tendrían en SQL Server, por ejemplo 207, 208, 547, 2714 y 8120.
+Los errores salen explicados en español y con el número que tendrían en SQL Server, por ejemplo 195, 207, 208, 547, 2714 y 8120.
 
 | Archivo | Qué hace |
 |---|---|

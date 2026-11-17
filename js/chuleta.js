@@ -62,16 +62,24 @@ export const CHULETA = [
         probar: "SELECT nombre,\n       UPPER(nombre) AS mayusculas,\n       ISNULL(telefono, 'Sin teléfono') AS telefono,\n       CONVERT(VARCHAR(10), fecha_registro, 103) AS registro,\n       DATEDIFF(day, fecha_registro, GETDATE()) AS dias\nFROM clientes;"
     },
     {
+        titulo: 'Ver cómo es una tabla',
+        texto: '<p>Antes de un INSERT o un JOIN sirve ver las columnas, cuáles aceptan NULL y quién depende de la tabla. Es lo mismo que Alt+F1 en SSMS.</p>',
+        sql: "-- columnas, llave y llaves foráneas\nEXEC sp_help 'productos';\n\n-- todas las tablas\nEXEC sp_help;",
+        probar: "EXEC sp_help 'productos';"
+    },
+    {
         titulo: 'Errores que más salen',
         ancha: true,
         html: `<div class="marco-tabla"><table class="datos errores-tabla"><thead><tr><th>Error</th><th>Qué quiere decir</th><th>Qué hacer</th></tr></thead><tbody>
             <tr><td>102</td><td>Error de sintaxis</td><td>Revisa comas, comillas simples y el orden de las partes</td></tr>
             <tr><td>207</td><td>Columna que no existe</td><td>Revisa el nombre o el alias de adelante</td></tr>
             <tr><td>208</td><td>Tabla que no existe</td><td>Revisa el nombre y en qué base estás</td></tr>
+            <tr><td>195</td><td>Función que no existe</td><td>Muchas veces es de MySQL, en SQL Server es LEN y no LENGTH, ISNULL y no IFNULL</td></tr>
             <tr><td>209</td><td>Columna ambigua</td><td>Está en las dos tablas del JOIN, ponle el alias, p.nombre</td></tr>
             <tr><td>515</td><td>No acepta NULL</td><td>Esa columna es NOT NULL, mándale un valor</td></tr>
             <tr><td>547</td><td>Choque con llave foránea</td><td>Otra tabla depende de esa fila, o el valor no existe en la otra tabla</td></tr>
             <tr><td>2627</td><td>Llave repetida</td><td>Ese valor ya existe en una llave primaria o única</td></tr>
+            <tr><td>2714</td><td>La tabla ya existe</td><td>Ponle otro nombre al respaldo o bórrala antes con DROP TABLE</td></tr>
             <tr><td>8120</td><td>Columna fuera del GROUP BY</td><td>Métela al GROUP BY o dentro de COUNT, SUM, AVG, MIN o MAX</td></tr>
             <tr><td>8134</td><td>División entre cero</td><td>Usa NULLIF(divisor, 0) para evitarla</td></tr>
         </tbody></table></div>`

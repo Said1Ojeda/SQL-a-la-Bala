@@ -51,7 +51,7 @@ function restaurar(s, textos) {
     return s.replace(/\u0001(\d+)\u0001/g, (_, n) => "'" + textos[+n].replace(/'/g, "''") + "'");
 }
 
-const SIEMPRE_CORTA = /^(INSERT|UPDATE|DELETE|BEGIN|COMMIT|ROLLBACK|CREATE|ALTER|DROP|PRINT|TRUNCATE|DECLARE|GO|SAVE)\b/i;
+const SIEMPRE_CORTA = /^(INSERT|UPDATE|DELETE|BEGIN|COMMIT|ROLLBACK|CREATE|ALTER|DROP|PRINT|TRUNCATE|DECLARE|GO|SAVE|EXEC|EXECUTE|SP_HELP|SP_COLUMNS)\b/i;
 
 // SQL Server deja escribir sin punto y coma, por eso se corta tambien por renglon
 function dividir(protegido) {
@@ -357,6 +357,7 @@ function funciones(db) {
     // los de SQLite no le hacen mayuscula a las tildes
     db.create_function('UPPER', t => t === null ? null : String(t).toLocaleUpperCase('es'));
     db.create_function('LOWER', t => t === null ? null : String(t).toLocaleLowerCase('es'));
+    db.create_function('NEWID', () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2)).toUpperCase());
     db.create_function('CEILING', v => v === null ? null : Math.ceil(v));
     db.create_function('FLOOR', v => v === null ? null : Math.floor(v));
     db.create_function('DATEDIFF', (p, a, b) => {
@@ -442,6 +443,7 @@ export function explicarError(msg) {
     if ((m = /NOT NULL constraint failed: (\S+)/i.exec(msg))) return `La columna ${m[1].split('.').pop()} no acepta vacíos, tienes que mandarle un valor. En SQL Server es el error 515.`;
     if (/UNIQUE constraint failed|PRIMARY KEY/i.test(msg)) return 'Ese valor ya existe y la llave no deja repetirlo. En SQL Server es el error 2627.';
     if ((m = /table (\S+) already exists/i.exec(msg))) return `Ya existe una tabla que se llama ${m[1].replace(/["\[\]]/g, '')}. Para hacer otro respaldo ponle otro nombre o bórrala antes con DROP TABLE. En SQL Server es el error 2714.`;
+    if ((m = /no such function: (\S+)/i.exec(msg))) return `'${m[1]}' no es una función que conozca SQL Server. Revisa cómo se escribe. En SQL Server es el error 195.`;
     if (/misuse of aggregate/i.test(msg)) return 'No puedes usar COUNT, SUM o AVG dentro del WHERE. Para filtrar grupos ya contados se usa HAVING.';
     if (/GROUP BY clause is required before HAVING|HAVING clause on a non-aggregate/i.test(msg)) return 'HAVING filtra grupos, entonces necesita un GROUP BY antes.';
     if (/incomplete input/i.test(msg)) return 'La consulta quedó incompleta. Revisa que no falte cerrar un paréntesis o una comilla.';
@@ -452,6 +454,75 @@ export function explicarError(msg) {
     if (/table \S+ has (\d+) columns but (\d+) values were supplied/i.test(msg)) return 'La tabla tiene más columnas de las que mandaste. Pon la lista de columnas después del nombre de la tabla.';
     if ((m = /near "([^"]*)": syntax error/i.exec(msg))) return `Error de sintaxis cerca de "${m[1]}". Revisa comas, comillas y el orden de las partes. En SQL Server es el error 102.`;
     return msg;
+}
+
+// funciones de MySQL o SQLite que en SQL Server no existen, con la que se usa en su lugar
+const DE_OTRO_LADO = {
+    LENGTH: 'LEN(texto)', CHAR_LENGTH: 'LEN(texto)', IFNULL: 'ISNULL(columna, valor)', NVL: 'ISNULL(columna, valor)',
+    SUBSTR: 'SUBSTRING(texto, inicio, largo)', INSTR: "CHARINDEX('busca', texto)", LOCATE: "CHARINDEX('busca', texto)",
+    NOW: 'GETDATE()', CURDATE: 'CAST(GETDATE() AS DATE)', SYSDATE: 'GETDATE()', GROUP_CONCAT: "STRING_AGG(columna, ', ')",
+    DATE_FORMAT: 'CONVERT(VARCHAR(10), fecha, 103)', STRFTIME: 'CONVERT(VARCHAR(10), fecha, 103)', RANDOM: 'NEWID() o RAND()',
+    TOTAL: 'SUM(columna)', PRINTF: 'FORMAT o CONVERT'
+};
+
+function revisarFunciones(protegido) {
+    const re = /(^|[^\w.\[])([A-Za-z_]+)\s*\(/g;
+    let m;
+    while ((m = re.exec(protegido))) {
+        const f = m[2].toUpperCase();
+        // un nombre de tabla seguido de parentesis no es funcion
+        if (/\b(INTO|TABLE|REFERENCES|JOIN|FROM|UPDATE)\s*$/i.test(protegido.slice(0, m.index + m[1].length))) continue;
+        if (DE_OTRO_LADO[f]) return `'${m[2]}' no existe en SQL Server, eso es de MySQL o SQLite. Aquí se usa ${DE_OTRO_LADO[f]}. Es el error 195.`;
+    }
+    return null;
+}
+
+// EXEC sp_help tabla, para ver las columnas sin salirse del editor
+const TIPOS = new WeakMap();
+
+function guardarTipos(db, lote) {
+    const m = /^\s*CREATE\s+TABLE\s+([#\w\[\]\.]+)\s*\(([\s\S]*)\)\s*$/i.exec(lote);
+    if (!m) return;
+    if (!TIPOS.has(db)) TIPOS.set(db, {});
+    const cols = {};
+    for (const def of porComasCrudo(m[2])) {
+        const c = /^\s*\[?(\w+)\]?\s+(\w+(?:\s*\([^)]*\))?)(\s+IDENTITY\b)?/i.exec(def);
+        if (!c || /^(PRIMARY|FOREIGN|CONSTRAINT|UNIQUE|CHECK)$/i.test(c[1])) continue;
+        cols[c[1].toLowerCase()] = c[2].replace(/\s+/g, '').toLowerCase() + (c[3] ? ' identity' : '');
+    }
+    TIPOS.get(db)[limpiaNombre(m[1]).toLowerCase()] = cols;
+}
+
+function esSpHelp(lote) {
+    return /^\s*(?:EXEC(?:UTE)?\s+)?(?:dbo\.)?(sp_help|sp_columns)\b\s*(.*?)\s*$/is.exec(lote);
+}
+
+function spHelp(db, nombre) {
+    const tablas = db.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' UNION ALL SELECT name FROM sqlite_temp_master WHERE type = 'table' ORDER BY 1");
+    const lista = tablas.length ? tablas[0].values.map(v => v[0]) : [];
+    if (!nombre) return [{ columnas: ['Name', 'Owner', 'Object_type'], filas: lista.map(t => [t, 'dbo', 'user table']) }];
+    const tabla = lista.find(t => t.toLowerCase() === nombre.toLowerCase());
+    if (!tabla) throw new Error(`No existe ningún objeto que se llame ${nombre}. Revisa el nombre, las tablas son ${lista.join(', ')}. En SQL Server es el error 15009.`);
+    const tipos = (TIPOS.get(db) || {})[tabla.toLowerCase()] || {};
+    const info = db.exec(`PRAGMA table_info([${tabla}])`)[0];
+    const salida = [{
+        columnas: ['Column_name', 'Type', 'Nullable', 'Default'],
+        filas: info.values.map(([, col, tipo, noNulo, def, llave]) => [col, tipos[col.toLowerCase()] || String(tipo).toLowerCase(), noNulo || llave ? 'no' : 'yes', def === null ? null : String(def).replace(/\(?datetime\('now','localtime'\)\)?/i, '(getdate())')])
+    }];
+    const llaves = info.values.filter(v => v[5]).map(v => v[1]);
+    if (llaves.length) salida.push({ columnas: ['index_name', 'index_keys'], filas: [['PK_' + tabla, llaves.join(', ')]] });
+    const fk = [];
+    for (const otra of lista) {
+        const r = db.exec(`PRAGMA foreign_key_list([${otra}])`);
+        if (!r.length) continue;
+        for (const v of r[0].values) {
+            const [, , destino, desde, hacia] = v;
+            if (otra === tabla) fk.push([`FK_${tabla}_${destino}`, `${desde} REFERENCES ${destino} (${hacia || 'id'})`]);
+            else if (destino.toLowerCase() === tabla.toLowerCase()) fk.push([`Table is referenced by ${otra}`, `${otra}.${desde}`]);
+        }
+    }
+    if (fk.length) salida.push({ columnas: ['constraint_name', 'constraint_keys'], filas: fk });
+    return salida;
 }
 
 // separa un select en sus partes, solo en el nivel de afuera
@@ -609,6 +680,23 @@ export function ejecutar(db, sql) {
     for (const l of lotes) {
         const original = restaurar(l, textos);
         const tipo = tipoDe(l);
+        const ayuda = esSpHelp(original);
+        if (ayuda) {
+            try {
+                const nombre = ayuda[2].replace(/^N?'|'$/g, '').replace(/[\[\]]/g, '').replace(/^dbo\./i, '').trim();
+                for (const r of spHelp(db, nombre)) salida.resultados.push({ ...r, sql: original });
+                salida.lotes.push({ tipo: 'EXEC', sql: original, afectadas: null, tabla: null });
+            } catch (e) {
+                salida.error = { texto: e.message, lote: original };
+                break;
+            }
+            continue;
+        }
+        const deOtroLado = revisarFunciones(l);
+        if (deOtroLado) {
+            salida.error = { texto: deOtroLado, lote: original };
+            break;
+        }
         const malAgrupado = revisarAgrupado(original);
         if (malAgrupado) {
             salida.error = { texto: malAgrupado, lote: original };
@@ -624,6 +712,7 @@ export function ejecutar(db, sql) {
         if (!traducido.trim()) continue;
         try {
             const res = db.exec(traducido);
+            if (tipo === 'CREATE') guardarTipos(db, original);
             const nueva = tipo === 'SELECT' ? intoDe(original) : null;
             let afectadas = ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'].includes(tipo) ? db.getRowsModified() : null;
             if (nueva) afectadas = db.exec(`SELECT COUNT(*) FROM [${nueva}]`)[0].values[0][0];

@@ -717,11 +717,11 @@ export function ejecutar(db, sql) {
             let afectadas = ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'].includes(tipo) ? db.getRowsModified() : null;
             if (nueva) afectadas = db.exec(`SELECT COUNT(*) FROM [${nueva}]`)[0].values[0][0];
             salida.lotes.push({ tipo, sql: original, afectadas, tabla: tablaObjetivo(original) });
-            for (const r of res) salida.resultados.push({ columnas: r.columns, filas: r.values, sql: original });
+            for (const r of res) salida.resultados.push({ columnas: tipo === 'SELECT' ? nombresComoSqlServer(original, r.columns) : r.columns, filas: r.values, sql: original });
             if (nueva) salida.mensajes.push(`Tabla ${nueva} creada. (${afectadas} ${afectadas === 1 ? 'fila afectada' : 'filas afectadas'})`);
             else if (afectadas !== null) salida.mensajes.push(`(${afectadas} ${afectadas === 1 ? 'fila afectada' : 'filas afectadas'})`);
             else if (tipo === 'SELECT' && !res.length) {
-                salida.resultados.push({ columnas: columnasVacias(db, traducido), filas: [], sql: original });
+                salida.resultados.push({ columnas: nombresComoSqlServer(original, columnasVacias(db, traducido)), filas: [], sql: original });
                 salida.mensajes.push('(0 filas)');
             } else if (tipo === 'SELECT') salida.mensajes.push(`(${res[0].values.length} ${res[0].values.length === 1 ? 'fila' : 'filas'})`);
             else if (tipo === 'BEGIN') salida.mensajes.push('Transacción abierta. Lo que hagas no queda hasta que pongas COMMIT.');
@@ -734,6 +734,22 @@ export function ejecutar(db, sql) {
         }
     }
     return salida;
+}
+
+// SQL Server no le pone nombre a una columna calculada sin alias
+function nombresComoSqlServer(original, columnas) {
+    const p = partes(original);
+    if (!p || !p.select) return columnas;
+    const items = porComasCrudo(proteger(p.select).s).map(c => c.trim());
+    if (items.length !== columnas.length || items.some(c => /(^|\.)\*$/.test(c))) return columnas;
+    return columnas.map((nombre, i) => {
+        const c = items[i];
+        const simple = /^(\[[^\]]+\]|\w+)(\.(\[[^\]]+\]|\w+))*$/.test(c) && !/^\d/.test(c) && !/^NULL$/i.test(c);
+        const conAlias = /\s+AS\s+(\[[^\]]+\]|\w+|\u0001\d+\u0001)$/i.test(c)
+            || (/[)\w\]\u0001]\s+(\[[^\]]+\]|\w+)$/.test(c) && !/\s+END$/i.test(c))
+            || /^(\[[^\]]+\]|\w+)\s*=[^=]/.test(c);
+        return simple || conAlias ? nombre : '(No column name)';
+    });
 }
 
 // cuando un select no trae filas igual se quieren ver los encabezados

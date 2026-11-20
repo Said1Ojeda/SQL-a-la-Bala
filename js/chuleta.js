@@ -58,7 +58,7 @@ export const CHULETA = [
     },
     {
         titulo: 'Funciones del día a día',
-        sql: "GETDATE()                           -- fecha y hora de hoy\nDATEDIFF(day, desde, hasta)         -- días entre dos fechas\nDATEADD(month, 1, fecha)            -- sumar un mes\nYEAR(fecha), MONTH(fecha), DAY(fecha)\nCONVERT(VARCHAR(10), fecha, 103)    -- dd/mm/aaaa\nISNULL(columna, 'Sin dato')         -- cambiar NULL por algo\nUPPER(texto), LEN(texto), LEFT(texto, 3)\nnombre + ' - ' + CONVERT(VARCHAR, zona)  -- unir textos",
+        sql: "GETDATE()                           -- fecha y hora de hoy\nDATEDIFF(day, desde, hasta)         -- días entre dos fechas\nDATEADD(month, 1, fecha)            -- sumar un mes\nYEAR(fecha), MONTH(fecha), DAY(fecha)\nCONVERT(VARCHAR(10), fecha, 103)    -- dd/mm/aaaa\nEOMONTH(fecha)                      -- último día del mes\nTRY_CAST(texto AS INT)              -- NULL si no es número\nFORMAT(precio, 'N2')                -- 1,234.50\nISNULL(columna, 'Sin dato')         -- cambiar NULL por algo\nUPPER(texto), LEN(texto), LEFT(texto, 3)\nnombre + ' - ' + CONVERT(VARCHAR, zona)  -- unir textos",
         probar: "SELECT nombre,\n       UPPER(nombre) AS mayusculas,\n       ISNULL(telefono, 'Sin teléfono') AS telefono,\n       CONVERT(VARCHAR(10), fecha_registro, 103) AS registro,\n       DATEDIFF(day, fecha_registro, GETDATE()) AS dias\nFROM clientes;"
     },
     {

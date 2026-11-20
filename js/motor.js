@@ -607,6 +607,30 @@ function sinSubconsultas(t) {
     return r;
 }
 
+// COUNT o SUM con OVER no agrupan, trabajan fila por fila
+function sinVentanas(c) {
+    let m;
+    while ((m = /\bOVER\s*\(/i.exec(c))) {
+        let prof = 0, fin = c.length;
+        for (let j = m.index + m[0].length - 1; j < c.length; j++) {
+            if (c[j] === '(') prof++;
+            else if (c[j] === ')' && --prof === 0) { fin = j + 1; break; }
+        }
+        let ini = m.index - 1;
+        while (ini >= 0 && /\s/.test(c[ini])) ini--;
+        if (c[ini] === ')') {
+            prof = 0;
+            for (; ini >= 0; ini--) {
+                if (c[ini] === ')') prof++;
+                else if (c[ini] === '(' && --prof === 0) break;
+            }
+            while (ini > 0 && /\w/.test(c[ini - 1])) ini--;
+        }
+        c = c.slice(0, Math.max(ini, 0)) + '0' + c.slice(fin);
+    }
+    return c;
+}
+
 function revisarAgrupado(lote) {
     if (!/^\s*SELECT\b/i.test(lote)) return null;
     const p = partes(lote);
@@ -614,7 +638,7 @@ function revisarAgrupado(lote) {
     const crudas = porComas(p.select);
     const aliasDe = c => (/\s+AS\s+\[?([^\]]+?)\]?\s*$/i.exec(c) || /\)\s+\[?(\w+)\]?\s*$/.exec(c) || /^\s*[\w.]+\s+\[?(\w+)\]?\s*$/.exec(c) || [])[1];
     const alias = crudas.map(aliasDe).filter(Boolean).map(x => x.toLowerCase().replace(/\s+/g, ''));
-    const cols = crudas.map(c => sinSubconsultas(c.replace(/\s+AS\s+[\w\[\]]+$/i, '').replace(/\s+\[[^\]]+\]$/, '')));
+    const cols = crudas.map(c => sinVentanas(sinSubconsultas(c.replace(/\s+AS\s+[\w\[\]]+$/i, '').replace(/\s+\[[^\]]+\]$/, ''))));
     const hayAgregado = cols.some(c => AGREGADO.test(c));
     if (!p.groupBy && !hayAgregado) return null;
     const grupo = p.groupBy ? porComas(p.groupBy).map(norm) : [];

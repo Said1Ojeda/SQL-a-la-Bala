@@ -182,6 +182,27 @@ function reescribirConvert(s) {
     return s;
 }
 
+// SELECT Total = precio * 2 es la forma vieja de poner alias, se pasa a precio * 2 AS Total
+function aliasConIgual(s) {
+    const m = /^\s*SELECT\s+(DISTINCT\s+)?(TOP\s*\(?\s*\d+(?:\s*\))?(\s+PERCENT)?(\s+WITH\s+TIES)?\s+)?/i.exec(s);
+    if (!m) return s;
+    const ini = m[0].length;
+    let prof = 0, fin = s.length;
+    for (let i = ini; i < s.length; i++) {
+        const c = s[i];
+        if (c === '(') prof++;
+        else if (c === ')') prof--;
+        else if (prof === 0 && !/\w/.test(s[i - 1] || '') && /^(FROM|INTO)\b/i.test(s.slice(i))) { fin = i; break; }
+    }
+    const lista = s.slice(ini, fin);
+    if (!/=/.test(lista)) return s;
+    const items = porComasCrudo(lista).map(c => {
+        const a = /^\s*(\[[^\]]+\]|[A-Za-z_]\w*)\s*=(?!=)\s*([\s\S]+?)\s*$/.exec(c);
+        return a ? `${a[2]} AS ${a[1]}` : c.trim();
+    });
+    return s.slice(0, ini) + items.join(', ') + (fin < s.length ? ' ' : '') + s.slice(fin);
+}
+
 // busca el INTO de un SELECT INTO en el nivel de afuera
 function buscarInto(s) {
     if (!/^\s*SELECT\b/i.test(s)) return null;
@@ -280,6 +301,7 @@ function traducir(lote) {
     s = s.replace(/\bWITH\s*\(\s*NOLOCK\s*\)/gi, '');
     // las tablas con # son temporales, en SQLite el nombre va entre corchetes
     s = s.replace(/(^|[^\w\[#])(##?\w+)/g, '$1[$2]');
+    s = aliasConIgual(s);
     s = selectInto(s);
     s = s.replace(/^SET\s+IDENTITY_INSERT\b.*$/gim, '');
     s = s.replace(/\bBEGIN\s+TRAN(SACTION)?\b(\s+\w+)?/gi, 'BEGIN TRANSACTION');
@@ -723,9 +745,9 @@ function revisarAgrupado(lote) {
     const p = partes(lote);
     if (!p || !p.select) return null;
     const crudas = porComas(p.select);
-    const aliasDe = c => (/\s+AS\s+\[?([^\]]+?)\]?\s*$/i.exec(c) || /\)\s+\[?(\w+)\]?\s*$/.exec(c) || /^\s*[\w.]+\s+\[?(\w+)\]?\s*$/.exec(c) || [])[1];
+    const aliasDe = c => (/^\s*\[?([A-Za-z_][^\]=]*?)\]?\s*=(?!=)/.exec(c) || /\s+AS\s+\[?([^\]]+?)\]?\s*$/i.exec(c) || /\)\s+\[?(\w+)\]?\s*$/.exec(c) || /^\s*[\w.]+\s+\[?(\w+)\]?\s*$/.exec(c) || [])[1];
     const alias = crudas.map(aliasDe).filter(Boolean).map(x => x.toLowerCase().replace(/\s+/g, ''));
-    const cols = crudas.map(c => sinVentanas(sinSubconsultas(c.replace(/\s+AS\s+[\w\[\]]+$/i, '').replace(/\s+\[[^\]]+\]$/, ''))));
+    const cols = crudas.map(c => sinVentanas(sinSubconsultas(c.replace(/^\s*(\[[^\]]+\]|[A-Za-z_]\w*)\s*=(?!=)\s*/, '').replace(/\s+AS\s+[\w\[\]]+$/i, '').replace(/\s+\[[^\]]+\]$/, ''))));
     const hayAgregado = cols.some(c => AGREGADO.test(c));
     if (!p.groupBy && !hayAgregado) return null;
     const grupo = p.groupBy ? porComas(p.groupBy).map(norm) : [];

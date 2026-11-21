@@ -45,10 +45,14 @@ El motor es [sql.js](https://github.com/sql-js/sql.js), que es SQLite compilado 
 |---|---|
 | `UPDATE p SET ... FROM productos p JOIN ...` y `DELETE d FROM ... JOIN ...` | se reescriben para SQLite con el mismo resultado |
 | `TOP 5`, `TOP 10 PERCENT`, `TOP 3 WITH TIES`, `OFFSET ... FETCH` | se vuelve `LIMIT`, también dentro de subconsultas. PERCENT redondea para arriba y WITH TIES trae las que empatan con la última |
-| `GETDATE()`, `DATEDIFF`, `DATEADD`, `DATEPART`, `YEAR`, `MONTH`, `DAY` | funciones propias con las mismas reglas, el 31 más un mes cae en el último día del mes |
+| `GETDATE()`, `DATEDIFF`, `DATEADD`, `DATEPART`, `YEAR`, `MONTH`, `DAY`, `EOMONTH`, `DATEFROMPARTS` | funciones propias con las mismas reglas, el 31 más un mes cae en el último día del mes |
 | `CONVERT(VARCHAR, fecha, 103)` | estilos 101, 103, 23, 108 y 120 |
-| `ISNULL`, `LEN`, `LEFT`, `RIGHT`, `CHARINDEX` | equivalentes de SQLite o funciones propias |
+| `ISNULL`, `LEN`, `LEFT`, `RIGHT`, `CHARINDEX`, `PATINDEX`, `STUFF`, `SPACE`, `STR`, `CHOOSE`, `ISNUMERIC` | equivalentes de SQLite o funciones propias |
+| `TRY_CAST`, `TRY_CONVERT`, `FORMAT(precio, 'N2')` | si no se puede convertir devuelven NULL en vez de tronar, como en SQL Server |
 | `'texto' + 'texto'` | se une igual que en SQL Server |
+| `SELECT Total = precio * 2` | la forma vieja de poner alias, se vuelve `precio * 2 AS Total` |
+| `SELECT COUNT(*) FROM ventas` | la columna sin alias sale como `(No column name)`, igual que en SSMS |
+| `COUNT(*) OVER ()`, `ROW_NUMBER() OVER (...)` | funciones de ventana, sin confundirlas con un GROUP BY |
 | `EXEC sp_help productos` | enseña las columnas, la llave y quién depende de la tabla, como Alt+F1 en SSMS |
 | `LENGTH`, `IFNULL`, `NOW()` y otras de MySQL | da el error 195 y dice cuál se usa en SQL Server, aunque SQLite sí las aceptaría |
 | `BEGIN TRAN`, `COMMIT`, `ROLLBACK`, `@@ROWCOUNT`, `SCOPE_IDENTITY()` | transacciones de verdad |

@@ -58,8 +58,14 @@ export const CHULETA = [
     },
     {
         titulo: 'Funciones del día a día',
-        sql: "GETDATE()                           -- fecha y hora de hoy\nDATEDIFF(day, desde, hasta)         -- días entre dos fechas\nDATEADD(month, 1, fecha)            -- sumar un mes\nYEAR(fecha), MONTH(fecha), DAY(fecha)\nCONVERT(VARCHAR(10), fecha, 103)    -- dd/mm/aaaa\nISNULL(columna, 'Sin dato')         -- cambiar NULL por algo\nUPPER(texto), LEN(texto), LEFT(texto, 3)\nnombre + ' - ' + CONVERT(VARCHAR, zona)  -- unir textos",
+        sql: "GETDATE()                           -- fecha y hora de hoy\nDATEDIFF(day, desde, hasta)         -- días entre dos fechas\nDATEADD(month, 1, fecha)            -- sumar un mes\nYEAR(fecha), MONTH(fecha), DAY(fecha)\nCONVERT(VARCHAR(10), fecha, 103)    -- dd/mm/aaaa\nEOMONTH(fecha)                      -- último día del mes\nTRY_CAST(texto AS INT)              -- NULL si no es número\nFORMAT(precio, 'N2')                -- 1,234.50\nISNULL(columna, 'Sin dato')         -- cambiar NULL por algo\nUPPER(texto), LEN(texto), LEFT(texto, 3)\nnombre + ' - ' + CONVERT(VARCHAR, zona)  -- unir textos",
         probar: "SELECT nombre,\n       UPPER(nombre) AS mayusculas,\n       ISNULL(telefono, 'Sin teléfono') AS telefono,\n       CONVERT(VARCHAR(10), fecha_registro, 103) AS registro,\n       DATEDIFF(day, fecha_registro, GETDATE()) AS dias\nFROM clientes;"
+    },
+    {
+        titulo: 'Alias de columnas',
+        texto: '<p>Sin alias, una columna calculada sale como <b>(No column name)</b>. Las tres formas dan lo mismo, la del igual se ve mucho en código viejo.</p>',
+        sql: "SELECT precio * 1.12 AS con_iva        -- la de siempre\nSELECT precio * 1.12 con_iva           -- sin el AS\nSELECT con_iva = precio * 1.12         -- la vieja\n\n-- con espacios va entre corchetes\nSELECT [Precio con IVA] = precio * 1.12",
+        probar: "SELECT nombre,\n       precio * 1.12,\n       [Precio con IVA] = precio * 1.12\nFROM productos;"
     },
     {
         titulo: 'Ver cómo es una tabla',

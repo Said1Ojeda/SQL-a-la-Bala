@@ -156,7 +156,7 @@ function conExpresiones(orden, cuerpo) {
 
 // CONVERT puede traer 2 o 3 argumentos y sql.js no deja funciones con argumentos variables
 function reescribirConvert(s) {
-    const re = /\bCONVERT\s*\(/gi;
+    const re = /\b(TRY_)?CONVERT\s*\(/gi;
     let m;
     while ((m = re.exec(s))) {
         const ini = m.index + m[0].length;
@@ -175,11 +175,32 @@ function reescribirConvert(s) {
         args.push(s.slice(desde, fin));
         if (args.length < 2) continue;
         const tipo = args[0].trim().replace(/\s*\(.*\)$/, '');
-        const nuevo = `CONVERTIR('${tipo}', ${args[1].trim()}, ${args[2] ? args[2].trim() : 'NULL'})`;
+        const nuevo = `${m[1] ? 'PROBAR' : ''}CONVERTIR('${tipo}', ${args[1].trim()}, ${args[2] ? args[2].trim() : 'NULL'})`;
         s = s.slice(0, m.index) + nuevo + s.slice(fin + 1);
         re.lastIndex = m.index + nuevo.length;
     }
     return s;
+}
+
+// SELECT Total = precio * 2 es la forma vieja de poner alias, se pasa a precio * 2 AS Total
+function aliasConIgual(s) {
+    const m = /^\s*SELECT\s+(DISTINCT\s+)?(TOP\s*\(?\s*\d+(?:\s*\))?(\s+PERCENT)?(\s+WITH\s+TIES)?\s+)?/i.exec(s);
+    if (!m) return s;
+    const ini = m[0].length;
+    let prof = 0, fin = s.length;
+    for (let i = ini; i < s.length; i++) {
+        const c = s[i];
+        if (c === '(') prof++;
+        else if (c === ')') prof--;
+        else if (prof === 0 && !/\w/.test(s[i - 1] || '') && /^(FROM|INTO)\b/i.test(s.slice(i))) { fin = i; break; }
+    }
+    const lista = s.slice(ini, fin);
+    if (!/=/.test(lista)) return s;
+    const items = porComasCrudo(lista).map(c => {
+        const a = /^\s*(\[[^\]]+\]|[A-Za-z_]\w*)\s*=(?!=)\s*([\s\S]+?)\s*$/.exec(c);
+        return a ? `${a[2]} AS ${a[1]}` : c.trim();
+    });
+    return s.slice(0, ini) + items.join(', ') + (fin < s.length ? ' ' : '') + s.slice(fin);
 }
 
 // busca el INTO de un SELECT INTO en el nivel de afuera
@@ -280,6 +301,7 @@ function traducir(lote) {
     s = s.replace(/\bWITH\s*\(\s*NOLOCK\s*\)/gi, '');
     // las tablas con # son temporales, en SQLite el nombre va entre corchetes
     s = s.replace(/(^|[^\w\[#])(##?\w+)/g, '$1[$2]');
+    s = aliasConIgual(s);
     s = selectInto(s);
     s = s.replace(/^SET\s+IDENTITY_INSERT\b.*$/gim, '');
     s = s.replace(/\bBEGIN\s+TRAN(SACTION)?\b(\s+\w+)?/gi, 'BEGIN TRANSACTION');
@@ -297,6 +319,8 @@ function traducir(lote) {
     s = s.replace(/\bLEFT\s*\(/gi, 'IZQ(');
     s = s.replace(/\bRIGHT\s*\(/gi, 'DER(');
     s = s.replace(/\b(DATEDIFF|DATEADD|DATEPART|DATENAME)\s*\(\s*(\w+)\s*,/gi, "$1('$2',");
+    s = s.replace(/\bTRY_CAST\s*\(\s*([^()]+?)\s+AS\s+(\w+(?:\s*\([^)]*\))?)\s*\)/gi, 'TRY_CONVERT($2, $1)');
+    s = s.replace(/\bCOUNT_BIG\s*\(/gi, 'COUNT(');
     s = reescribirConvert(s);
     s = s.replace(/\bCAST\s*\(\s*([^()]+?)\s+AS\s+DATE\s*\)/gi, 'date($1)');
     s = s.replace(/\bCAST\s*\(\s*([^()]+?)\s+AS\s+DATETIME2?\s*\)/gi, 'datetime($1)');
@@ -346,6 +370,15 @@ const PARTE = p => {
 };
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+// sql.js toma la cantidad de argumentos de la funcion, para los opcionales se registra varias veces
+function conOpcionales(db, nombre, fn, desde, hasta) {
+    for (let k = desde; k <= hasta; k++) {
+        const f = (...a) => fn(...a);
+        Object.defineProperty(f, 'length', { value: k });
+        db.create_function(nombre, f);
+    }
+}
 
 function funciones(db) {
     db.create_function('IZQ', (t, n) => t === null ? null : String(t).slice(0, Math.max(0, n)));
@@ -411,27 +444,101 @@ function funciones(db) {
         if (parte === 'weekday') return DIAS[new Date(Date.UTC(f.a, f.m - 1, f.d)).getUTCDay()];
         return String(parte === 'year' ? f.a : f.d);
     });
-    db.create_function('CONVERTIR', (tipo, v, estilo) => {
+    db.create_function('SPACE', n => n === null ? null : ' '.repeat(Math.max(0, n)));
+    db.create_function('ASCII', t => t === null || t === '' ? null : String(t).charCodeAt(0));
+    db.create_function('QUOTENAME', t => t === null ? null : '[' + String(t).replace(/\]/g, ']]') + ']');
+    db.create_function('ISNUMERIC', t => t !== null && String(t).trim() !== '' && !isNaN(Number(t)) ? 1 : 0);
+    db.create_function('STUFF', (t, ini, largo, nuevo) => {
+        if (t === null || ini < 1 || ini > String(t).length) return null;
+        const x = String(t);
+        return x.slice(0, ini - 1) + (nuevo === null ? '' : String(nuevo)) + x.slice(ini - 1 + largo);
+    });
+    db.create_function('TRANSLATE', (t, de, a) => {
+        if (t === null) return null;
+        return [...String(t)].map(c => { const i = String(de).indexOf(c); return i >= 0 ? String(a)[i] : c; }).join('');
+    });
+    // el patron es el mismo del LIKE, con % y guion bajo
+    db.create_function('PATINDEX', (patron, t) => {
+        if (t === null || patron === null) return null;
+        let p = String(patron);
+        const libreInicio = p.startsWith('%'), libreFin = p.endsWith('%') && p.length > 1;
+        p = p.replace(/^%/, '').replace(/%$/, '');
+        const cuerpo = p.replace(/\[[^\]]*\]|%|_|[.*+?^${}()|\\]/g, x => x[0] === '[' ? x : x === '%' ? '[\\s\\S]*?' : x === '_' ? '[\\s\\S]' : '\\' + x);
+        const m = new RegExp((libreInicio ? '' : '^') + cuerpo + (libreFin ? '' : '$'), 'i').exec(String(t));
+        return m ? m.index + 1 : 0;
+    });
+    conOpcionales(db, 'EOMONTH', (v, n) => {
+        const f = aFecha(v);
+        if (!f) return null;
+        const d = new Date(Date.UTC(f.a, f.m + (n || 0), 0));
+        return fechaTexto({ a: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() }, false);
+    }, 1, 2);
+    db.create_function('DATEFROMPARTS', (a, m, d) => {
+        if (a === null || m === null || d === null) return null;
+        const x = new Date(Date.UTC(a, m - 1, d));
+        // sql.js solo pasa el mensaje si se lanza como texto
+        if (x.getUTCMonth() !== m - 1 || m < 1 || m > 12) throw 'No se puede armar esa fecha, el mes o el día no existen. En SQL Server es el error 289.';
+        return fechaTexto({ a, m, d }, false);
+    });
+    conOpcionales(db, 'STR', (n, largo, dec) => {
+        if (n === null) return null;
+        const t = Number(n).toFixed(dec || 0);
+        const l = largo || 10;
+        return t.length > l ? '*'.repeat(l) : t.padStart(l);
+    }, 1, 3);
+    conOpcionales(db, 'CHOOSE', (i, ...v) => (i >= 1 && i <= v.length ? v[i - 1] : null), 2, 12);
+    db.create_function('FORMAT', (v, formato) => {
+        if (v === null) return null;
+        const f = String(formato);
+        const num = /^([NFPC])(\d*)$/i.exec(f);
+        if (num && !isNaN(Number(v))) {
+            const tipo = num[1].toUpperCase(), dec = num[2] === '' ? 2 : +num[2];
+            const n = tipo === 'P' ? Number(v) * 100 : Number(v);
+            const texto = n.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec, useGrouping: tipo !== 'F' });
+            return tipo === 'P' ? texto + '%' : tipo === 'C' ? 'Q' + texto : texto;
+        }
+        const d = aFecha(v);
+        if (d) return f.replace(/yyyy|yy|MMMM|MM|dd|HH|mm|ss/g, x => ({ yyyy: d.a, yy: dos(d.a % 100), MMMM: MESES[d.m - 1], MM: dos(d.m), dd: dos(d.d), HH: dos(d.h), mm: dos(d.mi), ss: dos(d.s) })[x]);
+        return String(v);
+    });
+    db.create_function('PROBARCONVERTIR', (tipo, v, estilo) => {
         if (v === null) return null;
         const t = String(tipo).toUpperCase();
-        if (t.includes('CHAR')) {
-            const f = aFecha(v);
-            if (f && estilo !== undefined && estilo !== null) {
-                if (estilo == 103) return dos(f.d) + '/' + dos(f.m) + '/' + f.a;
-                if (estilo == 101) return dos(f.m) + '/' + dos(f.d) + '/' + f.a;
-                if (estilo == 23) return fechaTexto(f, false);
-                if (estilo == 120) return fechaTexto(f, true);
-                if (estilo == 108) return dos(f.h) + ':' + dos(f.mi) + ':' + dos(f.s);
-            }
-            return typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(2) : String(v);
-        }
-        if (t === 'INT' || t === 'BIGINT' || t === 'SMALLINT') return parseInt(v, 10);
-        if (t === 'DECIMAL' || t === 'NUMERIC' || t === 'MONEY' || t === 'FLOAT') return Number(v);
-        if (t === 'DATE') { const f = aFecha(v); return f ? fechaTexto(f, false) : null; }
-        if (t.startsWith('DATETIME')) { const f = aFecha(v); return f ? fechaTexto(f, true) : null; }
-        return v;
+        const x = String(v).trim();
+        if ((t === 'INT' || t === 'BIGINT' || t === 'SMALLINT') && !/^[-+]?\d+$/.test(x)) return null;
+        if ((t === 'DECIMAL' || t === 'NUMERIC' || t === 'MONEY' || t === 'FLOAT') && (x === '' || isNaN(Number(x)))) return null;
+        if ((t === 'DATE' || t.startsWith('DATETIME')) && !aFecha(v)) return null;
+        return convertir(tipo, v, estilo);
     });
+    db.create_function('CONVERTIR', (tipo, v, estilo) => convertir(tipo, v, estilo));
 }
+
+function convertir(tipo, v, estilo) {
+    if (v === null) return null;
+    const t = String(tipo).toUpperCase();
+    if (t.includes('CHAR')) {
+        const f = aFecha(v);
+        if (f && estilo !== undefined && estilo !== null) {
+            if (estilo == 103) return dos(f.d) + '/' + dos(f.m) + '/' + f.a;
+            if (estilo == 101) return dos(f.m) + '/' + dos(f.d) + '/' + f.a;
+            if (estilo == 23) return fechaTexto(f, false);
+            if (estilo == 120) return fechaTexto(f, true);
+            if (estilo == 108) return dos(f.h) + ':' + dos(f.mi) + ':' + dos(f.s);
+        }
+        return typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(2) : String(v);
+    }
+    if (t === 'INT' || t === 'BIGINT' || t === 'SMALLINT') return parseInt(v, 10);
+    if (t === 'DECIMAL' || t === 'NUMERIC' || t === 'MONEY' || t === 'FLOAT') return Number(v);
+    if (t === 'DATE') { const f = aFecha(v); return f ? fechaTexto(f, false) : null; }
+    if (t.startsWith('DATETIME')) { const f = aFecha(v); return f ? fechaTexto(f, true) : null; }
+    return v;
+}
+
+// funciones que si son de SQL Server pero que el motor todavia no tiene
+const FALTAN = ['TRY_PARSE', 'PARSE', 'STRING_SPLIT', 'OPENJSON', 'JSON_VALUE', 'JSON_QUERY', 'SOUNDEX', 'DIFFERENCE', 'DATETRUNC',
+    'DATEDIFF_BIG', 'DATETIMEFROMPARTS', 'TIMEFROMPARTS', 'SWITCHOFFSET', 'TODATETIMEOFFSET', 'STRING_ESCAPE', 'HASHBYTES', 'CHECKSUM',
+    'OBJECT_ID', 'DB_NAME', 'USER_NAME', 'SUSER_SNAME', 'HOST_NAME', 'APP_NAME', 'ERROR_MESSAGE', 'ERROR_NUMBER', 'ERROR_LINE', 'NCHAR',
+    'STDEVP', 'VARP', 'GROUPING', 'PERCENTILE_CONT', 'PERCENTILE_DISC', 'ISDATE', 'FORMATMESSAGE', 'COMPRESS', 'DECOMPRESS'];
 
 // los errores de SQLite dichos como los diria un compa, con el numero de SQL Server cuando aplica
 export function explicarError(msg) {
@@ -443,6 +550,8 @@ export function explicarError(msg) {
     if ((m = /NOT NULL constraint failed: (\S+)/i.exec(msg))) return `La columna ${m[1].split('.').pop()} no acepta vacíos, tienes que mandarle un valor. En SQL Server es el error 515.`;
     if (/UNIQUE constraint failed|PRIMARY KEY/i.test(msg)) return 'Ese valor ya existe y la llave no deja repetirlo. En SQL Server es el error 2627.';
     if ((m = /table (\S+) already exists/i.exec(msg))) return `Ya existe una tabla que se llama ${m[1].replace(/["\[\]]/g, '')}. Para hacer otro respaldo ponle otro nombre o bórrala antes con DROP TABLE. En SQL Server es el error 2714.`;
+    if ((m = /wrong number of arguments to function (\w+)/i.exec(msg))) return `A ${m[1]} le mandaste más o menos valores de los que lleva. Revisa las comas dentro del paréntesis. En SQL Server es el error 174.`;
+    if ((m = /no such function: (\S+)/i.exec(msg)) && FALTAN.includes(m[1].toUpperCase())) return `${m[1].toUpperCase()} sí existe en SQL Server, pero aquí todavía no está. Por ahora resuélvelo con otras funciones o pruébala directo en tu SSMS.`;
     if ((m = /no such function: (\S+)/i.exec(msg))) return `'${m[1]}' no es una función que conozca SQL Server. Revisa cómo se escribe. En SQL Server es el error 195.`;
     if (/misuse of aggregate/i.test(msg)) return 'No puedes usar COUNT, SUM o AVG dentro del WHERE. Para filtrar grupos ya contados se usa HAVING.';
     if (/GROUP BY clause is required before HAVING|HAVING clause on a non-aggregate/i.test(msg)) return 'HAVING filtra grupos, entonces necesita un GROUP BY antes.';
@@ -607,14 +716,38 @@ function sinSubconsultas(t) {
     return r;
 }
 
+// COUNT o SUM con OVER no agrupan, trabajan fila por fila
+function sinVentanas(c) {
+    let m;
+    while ((m = /\bOVER\s*\(/i.exec(c))) {
+        let prof = 0, fin = c.length;
+        for (let j = m.index + m[0].length - 1; j < c.length; j++) {
+            if (c[j] === '(') prof++;
+            else if (c[j] === ')' && --prof === 0) { fin = j + 1; break; }
+        }
+        let ini = m.index - 1;
+        while (ini >= 0 && /\s/.test(c[ini])) ini--;
+        if (c[ini] === ')') {
+            prof = 0;
+            for (; ini >= 0; ini--) {
+                if (c[ini] === ')') prof++;
+                else if (c[ini] === '(' && --prof === 0) break;
+            }
+            while (ini > 0 && /\w/.test(c[ini - 1])) ini--;
+        }
+        c = c.slice(0, Math.max(ini, 0)) + '0' + c.slice(fin);
+    }
+    return c;
+}
+
 function revisarAgrupado(lote) {
     if (!/^\s*SELECT\b/i.test(lote)) return null;
     const p = partes(lote);
     if (!p || !p.select) return null;
     const crudas = porComas(p.select);
-    const aliasDe = c => (/\s+AS\s+\[?([^\]]+?)\]?\s*$/i.exec(c) || /\)\s+\[?(\w+)\]?\s*$/.exec(c) || /^\s*[\w.]+\s+\[?(\w+)\]?\s*$/.exec(c) || [])[1];
+    const aliasDe = c => (/^\s*\[?([A-Za-z_][^\]=]*?)\]?\s*=(?!=)/.exec(c) || /\s+AS\s+\[?([^\]]+?)\]?\s*$/i.exec(c) || /\)\s+\[?(\w+)\]?\s*$/.exec(c) || /^\s*[\w.]+\s+\[?(\w+)\]?\s*$/.exec(c) || [])[1];
     const alias = crudas.map(aliasDe).filter(Boolean).map(x => x.toLowerCase().replace(/\s+/g, ''));
-    const cols = crudas.map(c => sinSubconsultas(c.replace(/\s+AS\s+[\w\[\]]+$/i, '').replace(/\s+\[[^\]]+\]$/, '')));
+    const cols = crudas.map(c => sinVentanas(sinSubconsultas(c.replace(/^\s*(\[[^\]]+\]|[A-Za-z_]\w*)\s*=(?!=)\s*/, '').replace(/\s+AS\s+[\w\[\]]+$/i, '').replace(/\s+\[[^\]]+\]$/, ''))));
     const hayAgregado = cols.some(c => AGREGADO.test(c));
     if (!p.groupBy && !hayAgregado) return null;
     const grupo = p.groupBy ? porComas(p.groupBy).map(norm) : [];
@@ -717,11 +850,11 @@ export function ejecutar(db, sql) {
             let afectadas = ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'].includes(tipo) ? db.getRowsModified() : null;
             if (nueva) afectadas = db.exec(`SELECT COUNT(*) FROM [${nueva}]`)[0].values[0][0];
             salida.lotes.push({ tipo, sql: original, afectadas, tabla: tablaObjetivo(original) });
-            for (const r of res) salida.resultados.push({ columnas: r.columns, filas: r.values, sql: original });
+            for (const r of res) salida.resultados.push({ columnas: tipo === 'SELECT' ? nombresComoSqlServer(original, r.columns) : r.columns, filas: r.values, sql: original });
             if (nueva) salida.mensajes.push(`Tabla ${nueva} creada. (${afectadas} ${afectadas === 1 ? 'fila afectada' : 'filas afectadas'})`);
             else if (afectadas !== null) salida.mensajes.push(`(${afectadas} ${afectadas === 1 ? 'fila afectada' : 'filas afectadas'})`);
             else if (tipo === 'SELECT' && !res.length) {
-                salida.resultados.push({ columnas: columnasVacias(db, traducido), filas: [], sql: original });
+                salida.resultados.push({ columnas: nombresComoSqlServer(original, columnasVacias(db, traducido)), filas: [], sql: original });
                 salida.mensajes.push('(0 filas)');
             } else if (tipo === 'SELECT') salida.mensajes.push(`(${res[0].values.length} ${res[0].values.length === 1 ? 'fila' : 'filas'})`);
             else if (tipo === 'BEGIN') salida.mensajes.push('Transacción abierta. Lo que hagas no queda hasta que pongas COMMIT.');
@@ -734,6 +867,22 @@ export function ejecutar(db, sql) {
         }
     }
     return salida;
+}
+
+// SQL Server no le pone nombre a una columna calculada sin alias
+function nombresComoSqlServer(original, columnas) {
+    const p = partes(original);
+    if (!p || !p.select) return columnas;
+    const items = porComasCrudo(proteger(p.select).s).map(c => c.trim());
+    if (items.length !== columnas.length || items.some(c => /(^|\.)\*$/.test(c))) return columnas;
+    return columnas.map((nombre, i) => {
+        const c = items[i];
+        const simple = /^(\[[^\]]+\]|\w+)(\.(\[[^\]]+\]|\w+))*$/.test(c) && !/^\d/.test(c) && !/^NULL$/i.test(c);
+        const conAlias = /\s+AS\s+(\[[^\]]+\]|\w+|\u0001\d+\u0001)$/i.test(c)
+            || (/[)\w\]\u0001]\s+(\[[^\]]+\]|\w+)$/.test(c) && !/\s+END$/i.test(c))
+            || /^(\[[^\]]+\]|\w+)\s*=[^=]/.test(c);
+        return simple || conAlias ? nombre : '(No column name)';
+    });
 }
 
 // cuando un select no trae filas igual se quieren ver los encabezados

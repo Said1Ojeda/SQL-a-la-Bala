@@ -62,6 +62,12 @@ export const CHULETA = [
         probar: "SELECT nombre,\n       UPPER(nombre) AS mayusculas,\n       ISNULL(telefono, 'Sin teléfono') AS telefono,\n       CONVERT(VARCHAR(10), fecha_registro, 103) AS registro,\n       DATEDIFF(day, fecha_registro, GETDATE()) AS dias\nFROM clientes;"
     },
     {
+        titulo: 'Alias de columnas',
+        texto: '<p>Sin alias, una columna calculada sale como <b>(No column name)</b>. Las tres formas dan lo mismo, la del igual se ve mucho en código viejo.</p>',
+        sql: "SELECT precio * 1.12 AS con_iva        -- la de siempre\nSELECT precio * 1.12 con_iva           -- sin el AS\nSELECT con_iva = precio * 1.12         -- la vieja\n\n-- con espacios va entre corchetes\nSELECT [Precio con IVA] = precio * 1.12",
+        probar: "SELECT nombre,\n       precio * 1.12,\n       [Precio con IVA] = precio * 1.12\nFROM productos;"
+    },
+    {
         titulo: 'Ver cómo es una tabla',
         texto: '<p>Antes de un INSERT o un JOIN sirve ver las columnas, cuáles aceptan NULL y quién depende de la tabla. Es lo mismo que Alt+F1 en SSMS.</p>',
         sql: "-- columnas, llave y llaves foráneas\nEXEC sp_help 'productos';\n\n-- todas las tablas\nEXEC sp_help;",

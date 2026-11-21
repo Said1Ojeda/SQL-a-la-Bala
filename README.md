@@ -50,6 +50,7 @@ El motor es [sql.js](https://github.com/sql-js/sql.js), que es SQLite compilado 
 | `ISNULL`, `LEN`, `LEFT`, `RIGHT`, `CHARINDEX`, `PATINDEX`, `STUFF`, `SPACE`, `STR`, `CHOOSE`, `ISNUMERIC` | equivalentes de SQLite o funciones propias |
 | `TRY_CAST`, `TRY_CONVERT`, `FORMAT(precio, 'N2')` | si no se puede convertir devuelven NULL en vez de tronar, como en SQL Server |
 | `'texto' + 'texto'` | se une igual que en SQL Server |
+| `SELECT Total = precio * 2` | la forma vieja de poner alias, se vuelve `precio * 2 AS Total` |
 | `SELECT COUNT(*) FROM ventas` | la columna sin alias sale como `(No column name)`, igual que en SSMS |
 | `COUNT(*) OVER ()`, `ROW_NUMBER() OVER (...)` | funciones de ventana, sin confundirlas con un GROUP BY |
 | `EXEC sp_help productos` | enseña las columnas, la llave y quién depende de la tabla, como Alt+F1 en SSMS |
